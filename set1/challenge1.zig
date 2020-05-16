@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Buffer = std.Buffer;
 const base64 = std.base64;
 const fmt = std.fmt;
 const testing = std.testing;
@@ -42,10 +41,9 @@ test "encoder" {
     const expected_hex = "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d";
 
     const actual_b64 = try encoder.hexToBase64(expected_hex);
+    defer testing.allocator.free(actual_b64);
     const actual_hex = try encoder.base64ToHex(expected_b64);
+    defer testing.allocator.free(actual_hex);
     testing.expectEqualSlices(u8, actual_hex, expected_hex);
     testing.expectEqualSlices(u8, actual_b64, expected_b64);
-
-    testing.allocator.free(actual_b64);
-    testing.allocator.free(actual_hex);
 }
