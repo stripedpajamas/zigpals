@@ -5,7 +5,16 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-pub fn fixedXor(out: []u8, input: []u8, key: []u8) !void {
+pub fn singleByteXor(out: []u8, input: []const u8, key: u8) !void {
+    assert(out.len == input.len);
+    const outSlice = out[0..out.len];
+
+    for (input) |value, idx| {
+        outSlice[idx] = value ^ key;
+    }
+}
+
+pub fn fixedXor(out: []u8, input: []const u8, key: []u8) !void {
     assert(out.len == input.len and input.len == key.len);
     const outSlice = out[0..out.len];
 
@@ -32,4 +41,18 @@ test "xor cipher" {
     try fixedXor(actual, input, key);
 
     testing.expectEqualSlices(u8, actual, expected);
+}
+
+test "single-byte cipher" {
+    const encoder = Encoder.init(testing.allocator);
+
+    const input = "hello world";
+    const key = 'z';
+    const expected = [_]u8{ 0x12, 0x1f, 0x16, 0x16, 0x15, 0x5a, 0x0d, 0x15, 0x08, 0x16, 0x1e };
+
+    var actual = try testing.allocator.alloc(u8, 11);
+    defer testing.allocator.free(actual);
+
+    try singleByteXor(actual, input, key);
+    testing.expectEqualSlices(u8, actual, expected[0..]);
 }
