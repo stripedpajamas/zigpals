@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
 const HashMap = std.HashMap;
+const ascii = std.ascii;
 const math = std.math;
 const testing = std.testing;
 const assert = std.debug.assert;
@@ -89,7 +90,10 @@ pub const LanguageScorer = struct {
         };
     }
 
-    pub fn score(self: *const LanguageScorer, text: []const u8) !f32 {
+    pub fn score(self: *const LanguageScorer, input: []const u8) !f32 {
+        const text = try ascii.allocLowerString(self.allocator, input);
+        defer self.allocator.free(text);
+
         var letterFrequencies = AutoHashMap(u8, f32).init(self.allocator);
         defer letterFrequencies.deinit();
 
@@ -115,8 +119,14 @@ pub const LanguageScorer = struct {
 
 test "language scorer" {
     const scorer = LanguageScorer.init(testing.allocator, Language.English);
-    const score_eng = try scorer.score("you can get back to enjoying your new Hyundai");
-    const score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
+    var score_eng = try scorer.score("you can get back to enjoying your new Hyundai");
+    var score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
+
+    std.debug.warn("score_eng: {} :: score_gib: {}\n\n", .{ score_eng, score_gib });
+    assert(score_eng > score_gib);
+
+    score_eng = try scorer.score("YOU CAN GET BACK TO ENJOYING YOUR NEW HYUNDAI");
+    score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 
     std.debug.warn("score_eng: {} :: score_gib: {}\n\n", .{ score_eng, score_gib });
     assert(score_eng > score_gib);
