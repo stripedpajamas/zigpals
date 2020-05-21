@@ -1,7 +1,9 @@
 const std = @import("std");
+const singleByteXor = @import("./challenge2.zig").singleByteXor;
 const Allocator = std.mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
 const HashMap = std.HashMap;
+const fmt = std.fmt;
 const ascii = std.ascii;
 const math = std.math;
 const testing = std.testing;
@@ -48,6 +50,7 @@ pub const Language = enum {
 };
 
 pub const EnglishLetterFrequencies = FrequencyLookupTable(.{
+    .{ ' ', 0.1918 },
     .{ 'a', 0.0834 },
     .{ 'b', 0.0154 },
     .{ 'c', 0.0273 },
@@ -95,7 +98,7 @@ pub const LanguageScorer = struct {
         defer letterFrequencies.deinit();
 
         for (text) |letter| {
-            var old_freq = try letterFrequencies.put(letter, 1.0 + (letterFrequencies.getValue(letter) orelse 0.0));
+            _ = try letterFrequencies.put(letter, 1.0 + (letterFrequencies.getValue(letter) orelse 0.0));
         }
 
         const text_len = @intToFloat(f32, text.len);
@@ -106,17 +109,42 @@ pub const LanguageScorer = struct {
 
         var _score: f32 = 1.0;
         var ltr: u8 = 0;
-        while (ltr < 255) {
+        while (ltr < 255) : (ltr += 1) {
             const actual_freq = (letterFrequencies.getValue(ltr) orelse 0.0) / text_len;
             const expected_freq = freq_table.get(ltr);
             const diff = math.absFloat(expected_freq - actual_freq);
             _score -= diff;
-            ltr += 1;
         }
 
         return _score;
     }
 };
+
+pub fn findSingleByteXorKey(allocator: *Allocator, language: Language, enc: []const u8) !u8 {
+    var keyScores = AutoHashMap(u8, f32).init(allocator);
+    defer keyScores.deinit();
+    const scorer = LanguageScorer.init(allocator, language);
+
+    var key: u8 = 0;
+    while (key < 255) : (key += 1) {
+        var dec = try allocator.alloc(u8, enc.len);
+        defer allocator.free(dec);
+        try singleByteXor(dec, enc, key);
+        _ = try keyScores.put(key, try scorer.score(dec));
+    }
+
+    var highScoreKey: u8 = undefined;
+    var highScore: f32 = math.f32_min;
+    var it = keyScores.iterator();
+    while (it.next()) |entry| {
+        if (entry.value > highScore) {
+            highScore = entry.value;
+            highScoreKey = entry.key;
+        }
+    }
+
+    return highScoreKey;
+}
 
 test "language scorer" {
     const scorer = LanguageScorer.init(testing.allocator, Language.English);
@@ -131,4 +159,18 @@ test "language scorer" {
 
     std.debug.warn("\nscore_eng: {} :: score_gib: {}\n", .{ score_eng, score_gib });
     assert(score_eng > score_gib);
+}
+
+test "find single byte xor key" {
+    var enc = try testing.allocator.alloc(u8, 34);
+    defer testing.allocator.free(enc);
+    try fmt.hexToBytes(enc, "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736");
+
+    const key = try findSingleByteXorKey(testing.allocator, Language.English, enc);
+    var dec = try testing.allocator.alloc(u8, 34);
+    defer testing.allocator.free(dec);
+    try singleByteXor(dec, enc, key);
+    std.debug.warn("\ndetermined key to be: {}\ndecrypted: {}\n\n", .{ key, dec });
+
+    assert(key == 88);
 }
