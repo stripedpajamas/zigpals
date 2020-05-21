@@ -16,7 +16,7 @@ pub fn FrequencyLookupTable(comptime values: var) type {
     };
     const empty = Entry{
         .key = undefined,
-        .val = undefined,
+        .val = 0.0,
     };
     var slots = [1]Entry{empty} ** size;
 
@@ -38,9 +38,6 @@ pub fn FrequencyLookupTable(comptime values: var) type {
         pub fn get(letter: u8) f32 {
             const idx = @as(usize, letter);
             const entry = &entries[idx];
-            if (entry.key != letter) {
-                return 0.0;
-            }
             return entry.val;
         }
     };
@@ -103,11 +100,15 @@ pub const LanguageScorer = struct {
 
         const text_len = @intToFloat(f32, text.len);
 
+        const freq_table = switch (self.language) {
+            Language.English => EnglishLetterFrequencies,
+        };
+
         var _score: f32 = 1.0;
         var ltr: u8 = 0;
         while (ltr < 255) {
             const actual_freq = (letterFrequencies.getValue(ltr) orelse 0.0) / text_len;
-            const expected_freq = EnglishLetterFrequencies.get(ltr);
+            const expected_freq = freq_table.get(ltr);
             const diff = math.absFloat(expected_freq - actual_freq);
             _score -= diff;
             ltr += 1;
@@ -122,12 +123,12 @@ test "language scorer" {
     var score_eng = try scorer.score("you can get back to enjoying your new Hyundai");
     var score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 
-    std.debug.warn("score_eng: {} :: score_gib: {}\n\n", .{ score_eng, score_gib });
+    std.debug.warn("\nscore_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
     assert(score_eng > score_gib);
 
     score_eng = try scorer.score("YOU CAN GET BACK TO ENJOYING YOUR NEW HYUNDAI");
     score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 
-    std.debug.warn("score_eng: {} :: score_gib: {}\n\n", .{ score_eng, score_gib });
+    std.debug.warn("\nscore_eng: {} :: score_gib: {}\n", .{ score_eng, score_gib });
     assert(score_eng > score_gib);
 }
