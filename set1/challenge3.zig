@@ -9,45 +9,25 @@ const math = std.math;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-// a comptime lookup table of u8 -> f32
-// this is mostly a convenience since its known that all the keys will be unique
-pub fn FrequencyLookupTable(comptime values: var) type {
-    const size = 255;
-    const Entry = struct {
-        key: u8, val: f32
-    };
-    const empty = Entry{
-        .key = undefined,
-        .val = 0.0,
-    };
-    var slots = [1]Entry{empty} ** size;
-
-    for (values) |kv| {
-        var key: u8 = kv[0];
-        var val: f32 = kv[1];
-
-        const idx = @as(usize, key);
-        const entry = &slots[idx];
-        entry.* = .{
-            .key = key,
-            .val = val,
-        };
-    }
-
-    return struct {
-        const entries = slots;
-
-        pub fn get(letter: u8) f32 {
-            const idx = @as(usize, letter);
-            const entry = &entries[idx];
-            return entry.val;
-        }
-    };
-}
-
 pub const Language = enum {
     English
 };
+
+// a comptime lookup table of u8 -> f32
+// this is mostly a convenience since its known that all the keys will be unique
+// any bytes that aren't specified in the input are considered to occur 0% in normal text
+pub fn FrequencyLookupTable(comptime byteFrequencies: var) [255]f32 {
+    var entries = [1]f32{0.0} ** 255;
+    for (byteFrequencies) |kv| {
+        var byte: u8 = kv[0];
+        var freq: f32 = kv[1];
+
+        const idx = @as(usize, byte);
+        const entry = &entries[idx];
+        entry.* = freq;
+    }
+    return entries;
+}
 
 pub const EnglishLetterFrequencies = FrequencyLookupTable(.{
     .{ ' ', 0.1918 },
@@ -111,7 +91,7 @@ pub const LanguageScorer = struct {
         var ltr: u8 = 0;
         while (ltr < 255) : (ltr += 1) {
             const actual_freq = (letterFrequencies.getValue(ltr) orelse 0.0) / text_len;
-            const expected_freq = freq_table.get(ltr);
+            const expected_freq = freq_table[ltr];
             const diff = math.absFloat(expected_freq - actual_freq);
             _score -= diff;
         }
