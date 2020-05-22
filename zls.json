@@ -1,0 +1,5 @@
+{
+  "enable_snippets": true,
+  "zig_lib_path": "/usr/local/Cellar/zig/HEAD-64955de_1/lib/zig",
+  "warn_style": true
+}

@@ -17,21 +17,16 @@ pub const DetectionResult = struct {
     key: u8
 };
 
-pub fn detectSingleByteXor(allocator: *mem.Allocator, challenge4_input_raw: []const u8) !DetectionResult {
-    const scorer = LanguageScorer.init(testing.allocator, Language.English);
+pub fn detectSingleByteXor(allocator: *mem.Allocator, input: [][]const u8, language: Language) !DetectionResult {
+    const scorer = LanguageScorer.init(allocator, language);
 
     var highScoreEnc = try allocator.alloc(u8, 0);
     var highScoreDec = try allocator.alloc(u8, 0);
     var highScoreKey: u8 = undefined;
     var highScore: f32 = math.f32_min;
 
-    var input_it = mem.split(challenge4_input_raw, "\n");
-    while (input_it.next()) |line| {
-        const enc = try allocator.alloc(u8, line.len / 2);
-        defer allocator.free(enc);
-        try fmt.hexToBytes(enc, line);
-
-        const key = try findSingleByteXorKey(allocator, Language.English, enc);
+    for (input) |enc| {
+        const key = try findSingleByteXorKey(allocator, language, enc);
         const dec = try allocator.alloc(u8, enc.len);
         defer allocator.free(dec);
         try singleByteXor(dec, enc, key);
@@ -62,9 +57,27 @@ test "detect single byte xor" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
+    var allocator = &arena.allocator;
+
     const challenge4_input_raw = @embedFile("./data/challenge4_input.txt");
-    
-    const detectionResult = try detectSingleByteXor(&arena.allocator, challenge4_input_raw);
+
+    var input = ArrayList([30]u8).init(allocator);
+    defer input.deinit();
+
+    var input_it = mem.split(challenge4_input_raw, "\n");
+    while (input_it.next()) |line| {
+        var enc = try input.addOne();
+        try fmt.hexToBytes(enc, line);
+    }
+
+    var inputSlices = ArrayList([]const u8).init(allocator);
+    defer inputSlices.deinit();
+
+    for (input.items) |*hex| {
+        try inputSlices.append(hex[0..]);
+    }
+
+    const detectionResult = try detectSingleByteXor(allocator, inputSlices.items, Language.English);
 
     std.debug.warn("\nenc: {}\ndec: {}\nkey: {}\n", .{
         detectionResult.enc,
