@@ -12,9 +12,7 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 
 pub const DetectionResult = struct {
-    enc: []u8,
-    dec: []u8,
-    key: u8
+    enc: []u8, dec: []u8, key: u8
 };
 
 pub fn detectSingleByteXor(allocator: *mem.Allocator, input: [][]const u8, language: Language) !DetectionResult {
