@@ -100,31 +100,57 @@ pub const LanguageScorer = struct {
     }
 };
 
-pub fn findSingleByteXorKey(allocator: *Allocator, language: Language, enc: []const u8) !u8 {
-    var keyScores = AutoHashMap(u8, f32).init(allocator);
-    defer keyScores.deinit();
-    const scorer = LanguageScorer.init(allocator, language);
+pub const SingleByteXorKeyFinder = struct {
+    allocator: *Allocator,
+    language: Language,
 
-    var key: u8 = 0;
-    while (key < 255) : (key += 1) {
-        var dec = try allocator.alloc(u8, enc.len);
-        defer allocator.free(dec);
-        try singleByteXor(dec, enc, key);
-        _ = try keyScores.put(key, try scorer.score(dec));
+    keyScores: AutoHashMap(u8, f32),
+    scorer: LanguageScorer,
+    dec: []u8,
+    buf: []u8,
+
+    pub fn init(allocator: *Allocator, language: Language) !SingleByteXorKeyFinder {
+        var buf = try allocator.alloc(u8, 30);
+        return SingleByteXorKeyFinder{
+            .allocator = allocator,
+            .language = language,
+            .keyScores = AutoHashMap(u8, f32).init(allocator),
+            .scorer = LanguageScorer.init(allocator, language),
+            .dec = buf[0..30],
+            .buf = buf,
+        };
     }
 
-    var highScoreKey: u8 = undefined;
-    var highScore: f32 = math.f32_min;
-    var it = keyScores.iterator();
-    while (it.next()) |entry| {
-        if (entry.value > highScore) {
-            highScore = entry.value;
-            highScoreKey = entry.key;
+    pub fn deinit(self: *SingleByteXorKeyFinder) void {
+        self.allocator.free(self.buf);
+        self.keyScores.deinit();
+    }
+
+    pub fn findKey(self: *SingleByteXorKeyFinder, enc: []const u8) !u8 {
+        if (self.dec.len < enc.len) {
+            self.dec = try self.allocator.realloc(self.dec, enc.len);
         }
-    }
+        var dec = self.dec[0..enc.len];
 
-    return highScoreKey;
-}
+        var key: u8 = 0;
+        while (key < 255) : (key += 1) {
+            try singleByteXor(dec, enc, key);
+            _ = try self.keyScores.put(key, try self.scorer.score(dec));
+        }
+
+        var highScoreKey: u8 = 0;
+        var highScore: f32 = math.f32_min;
+        var it = self.keyScores.iterator();
+        while (it.next()) |entry| {
+            if (entry.value > highScore) {
+                highScore = entry.value;
+                highScoreKey = entry.key;
+            }
+        }
+
+        return highScoreKey;
+    }
+};
 
 test "language scorer" {
     const scorer = LanguageScorer.init(testing.allocator, Language.English);
@@ -146,7 +172,10 @@ test "find single byte xor key" {
     defer testing.allocator.free(enc);
     try fmt.hexToBytes(enc, "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736");
 
-    const key = try findSingleByteXorKey(testing.allocator, Language.English, enc);
+    var key_finder = try SingleByteXorKeyFinder.init(testing.allocator, Language.English);
+    defer key_finder.deinit();
+    const key = try key_finder.findKey(enc);
+
     var dec = try testing.allocator.alloc(u8, 34);
     defer testing.allocator.free(dec);
     try singleByteXor(dec, enc, key);

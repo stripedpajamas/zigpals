@@ -1,10 +1,10 @@
 const std = @import("std");
 const challenge2 = @import("./challenge2.zig");
 const challenge3 = @import("./challenge3.zig");
+const SingleByteXorKeyFinder = challenge3.SingleByteXorKeyFinder;
 const LanguageScorer = challenge3.LanguageScorer;
 const Language = challenge3.Language;
 const singleByteXor = challenge2.singleByteXor;
-const findSingleByteXorKey = challenge3.findSingleByteXorKey;
 const math = std.math;
 const testing = std.testing;
 const fmt = std.fmt;
@@ -17,6 +17,7 @@ pub const DetectionResult = struct {
 pub const SingleByteXorDetector = struct {
     allocator: *mem.Allocator,
     scorer: LanguageScorer,
+    key_finder: SingleByteXorKeyFinder,
     language: Language,
 
     highScoreEnc: []u8,
@@ -24,22 +25,34 @@ pub const SingleByteXorDetector = struct {
     highScoreKey: u8,
     highScore: f32,
 
+    dec: []u8,
+    buf: []u8,
+
     pub fn init(allocator: *mem.Allocator, language: Language) !SingleByteXorDetector {
+        var buf = try allocator.alloc(u8, 90);
+        var key_finder = try SingleByteXorKeyFinder.init(allocator, Language.English);
         return SingleByteXorDetector{
             .allocator = allocator,
             .language = language,
             .scorer = LanguageScorer.init(allocator, language),
+            .key_finder = key_finder,
             .highScore = math.f32_min,
             .highScoreKey = 0,
-            .highScoreDec = try allocator.alloc(u8, 0),
-            .highScoreEnc = try allocator.alloc(u8, 0),
+            .highScoreDec = buf[0..30],
+            .highScoreEnc = buf[30..60],
+            .dec = buf[60..90],
+            .buf = buf,
         };
     }
 
+    pub fn deinit(self: *SingleByteXorDetector) void {
+        self.allocator.free(self.buf);
+        self.key_finder.deinit();
+    }
+
     pub fn addSample(self: *SingleByteXorDetector, enc: []const u8) !void {
-        const key = try findSingleByteXorKey(self.allocator, self.language, enc);
-        const dec = try self.allocator.alloc(u8, enc.len);
-        defer self.allocator.free(dec);
+        const key = try self.key_finder.findKey(enc);
+        var dec = self.dec[0..enc.len];
         try singleByteXor(dec, enc, key);
 
         const score = try self.scorer.score(dec);
@@ -48,8 +61,12 @@ pub const SingleByteXorDetector = struct {
             self.highScore = score;
             self.highScoreKey = key;
 
-            self.highScoreEnc = try self.allocator.realloc(self.highScoreEnc, enc.len);
-            self.highScoreDec = try self.allocator.realloc(self.highScoreDec, dec.len);
+            if (enc.len > self.highScoreEnc.len) {
+                self.highScoreEnc = try self.allocator.realloc(self.highScoreEnc, enc.len);
+            }
+            if (self.dec.len > self.highScoreDec.len) {
+                self.highScoreDec = try self.allocator.realloc(self.highScoreDec, dec.len);
+            }
 
             mem.copy(u8, self.highScoreEnc, enc);
             mem.copy(u8, self.highScoreDec, dec);
@@ -74,8 +91,13 @@ test "detect single byte xor" {
     // var allocator = testing.allocator;
 
     const challenge4_input_raw = @embedFile("./data/challenge4_input.txt");
+
+    var beginTs = std.time.milliTimestamp();
+
     var detector = try SingleByteXorDetector.init(allocator, Language.English);
-    var enc = try allocator.alloc(u8, 32);
+    defer detector.deinit();
+
+    var enc = try allocator.alloc(u8, 30);
     var input_it = mem.split(challenge4_input_raw, "\n");
     while (input_it.next()) |line| {
         var line_size = line.len / 2;
@@ -87,6 +109,7 @@ test "detect single byte xor" {
     }
 
     const detectionResult = detector.getMostLikelySample();
+    std.debug.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});
 
     std.debug.warn("\nenc: {}\ndec: {}\nkey: {}\n", .{
         detectionResult.enc,
