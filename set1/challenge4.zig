@@ -34,7 +34,7 @@ pub const SingleByteXorDetector = struct {
         return SingleByteXorDetector{
             .allocator = allocator,
             .language = language,
-            .scorer = LanguageScorer.init(allocator, language),
+            .scorer = try LanguageScorer.init(allocator, language),
             .key_finder = key_finder,
             .highScore = math.f32_min,
             .highScoreKey = 0,
@@ -48,6 +48,7 @@ pub const SingleByteXorDetector = struct {
     pub fn deinit(self: *SingleByteXorDetector) void {
         self.allocator.free(self.buf);
         self.key_finder.deinit();
+        self.scorer.deinit();
     }
 
     pub fn addSample(self: *SingleByteXorDetector, enc: []const u8) !void {
@@ -83,12 +84,7 @@ pub const SingleByteXorDetector = struct {
 };
 
 test "detect single byte xor" {
-    // TODO switch this out for testing.allocator when that allocator isn't limited to 2mb
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    var allocator = &arena.allocator;
-    // var allocator = testing.allocator;
+    var allocator = testing.allocator;
 
     const challenge4_input_raw = @embedFile("./data/challenge4_input.txt");
 
@@ -107,6 +103,7 @@ test "detect single byte xor" {
         try fmt.hexToBytes(enc[0..line_size], line);
         try detector.addSample(enc[0..line_size]);
     }
+    allocator.free(enc);
 
     const detectionResult = detector.getMostLikelySample();
     std.debug.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});

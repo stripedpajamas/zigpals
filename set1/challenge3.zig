@@ -63,22 +63,30 @@ pub const LanguageScorer = struct {
     allocator: *Allocator,
     language: Language,
 
-    pub fn init(allocator: *Allocator, language: Language) LanguageScorer {
+    letter_frequencies: AutoHashMap(u8, f32),
+    text: []u8,
+
+    pub fn init(allocator: *Allocator, language: Language) !LanguageScorer {
+        var text = try allocator.alloc(u8, 32);
         return LanguageScorer{
             .allocator = allocator,
             .language = language,
+            .letter_frequencies = AutoHashMap(u8, f32).init(allocator),
+            .text = text
         };
     }
 
-    pub fn score(self: *const LanguageScorer, input: []const u8) !f32 {
-        const text = try ascii.allocLowerString(self.allocator, input);
-        defer self.allocator.free(text);
+    pub fn deinit(self: *LanguageScorer) void {
+        self.letter_frequencies.deinit();
+        self.allocator.free(self.text);
+    }
 
-        var letterFrequencies = AutoHashMap(u8, f32).init(self.allocator);
-        defer letterFrequencies.deinit();
+    pub fn score(self: *LanguageScorer, input: []const u8) !f32 {
+        const text = try self.toLower(input);
 
+        self.letter_frequencies.clear();
         for (text) |letter| {
-            _ = try letterFrequencies.put(letter, 1.0 + (letterFrequencies.getValue(letter) orelse 0.0));
+            _ = try self.letter_frequencies.put(letter, 1.0 + (self.letter_frequencies.getValue(letter) orelse 0.0));
         }
 
         const text_len = @intToFloat(f32, text.len);
@@ -90,13 +98,24 @@ pub const LanguageScorer = struct {
         var _score: f32 = 1.0;
         var ltr: u8 = 0;
         while (ltr < 255) : (ltr += 1) {
-            const actual_freq = (letterFrequencies.getValue(ltr) orelse 0.0) / text_len;
+            const actual_freq = (self.letter_frequencies.getValue(ltr) orelse 0.0) / text_len;
             const expected_freq = freq_table[ltr];
             const diff = math.absFloat(expected_freq - actual_freq);
             _score -= diff;
         }
 
         return _score;
+    }
+
+    fn toLower(self: *LanguageScorer, input: []const u8) ![]u8 {
+        if (self.text.len < input.len) {
+            self.text = try self.allocator.realloc(self.text, input.len);
+        }
+        var text = self.text[0..input.len];
+        for (text) |*c, i| {
+            c.* = ascii.toLower(input[i]);
+        }
+        return text;
     }
 };
 
@@ -115,7 +134,7 @@ pub const SingleByteXorKeyFinder = struct {
             .allocator = allocator,
             .language = language,
             .keyScores = AutoHashMap(u8, f32).init(allocator),
-            .scorer = LanguageScorer.init(allocator, language),
+            .scorer = try LanguageScorer.init(allocator, language),
             .dec = buf[0..30],
             .buf = buf,
         };
@@ -124,10 +143,12 @@ pub const SingleByteXorKeyFinder = struct {
     pub fn deinit(self: *SingleByteXorKeyFinder) void {
         self.allocator.free(self.buf);
         self.keyScores.deinit();
+        self.scorer.deinit();
     }
 
     pub fn findKey(self: *SingleByteXorKeyFinder, enc: []const u8) !u8 {
         if (self.dec.len < enc.len) {
+            std.debug.warn("had to realloc finder's buf by {} bytes\n", .{enc.len - self.dec.len});
             self.dec = try self.allocator.realloc(self.dec, enc.len);
         }
         var dec = self.dec[0..enc.len];
