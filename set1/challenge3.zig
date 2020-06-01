@@ -68,10 +68,15 @@ pub const LanguageScorer = struct {
 
     pub fn init(allocator: *Allocator, language: Language) !LanguageScorer {
         var text = try allocator.alloc(u8, 32);
+        errdefer allocator.free(text);
+
+        var letter_frequencies = AutoHashMap(u8, f32).init(allocator);
+        errdefer letter_frequencies.deinit();
+
         return LanguageScorer{
             .allocator = allocator,
             .language = language,
-            .letter_frequencies = AutoHashMap(u8, f32).init(allocator),
+            .letter_frequencies = letter_frequencies,
             .text = text
         };
     }
@@ -130,11 +135,19 @@ pub const SingleByteXorKeyFinder = struct {
 
     pub fn init(allocator: *Allocator, language: Language) !SingleByteXorKeyFinder {
         var buf = try allocator.alloc(u8, 30);
+        errdefer allocator.free(buf);
+
+        var keyScores = AutoHashMap(u8, f32).init(allocator);
+        errdefer keyScores.deinit();
+
+        var scorer = try LanguageScorer.init(allocator, language);
+        errdefer scorer.deinit();
+
         return SingleByteXorKeyFinder{
             .allocator = allocator,
             .language = language,
-            .keyScores = AutoHashMap(u8, f32).init(allocator),
-            .scorer = try LanguageScorer.init(allocator, language),
+            .keyScores = keyScores,
+            .scorer = scorer,
             .dec = buf[0..30],
             .buf = buf,
         };
@@ -148,7 +161,6 @@ pub const SingleByteXorKeyFinder = struct {
 
     pub fn findKey(self: *SingleByteXorKeyFinder, enc: []const u8) !u8 {
         if (self.dec.len < enc.len) {
-            std.debug.warn("had to realloc finder's buf by {} bytes\n", .{enc.len - self.dec.len});
             self.dec = try self.allocator.realloc(self.dec, enc.len);
         }
         var dec = self.dec[0..enc.len];
@@ -174,7 +186,8 @@ pub const SingleByteXorKeyFinder = struct {
 };
 
 test "language scorer" {
-    const scorer = LanguageScorer.init(testing.allocator, Language.English);
+    var scorer = try LanguageScorer.init(testing.allocator, Language.English);
+    defer scorer.deinit();
     var score_eng = try scorer.score("you can get back to enjoying your new Hyundai");
     var score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 

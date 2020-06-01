@@ -30,11 +30,15 @@ pub const SingleByteXorDetector = struct {
 
     pub fn init(allocator: *mem.Allocator, language: Language) !SingleByteXorDetector {
         var buf = try allocator.alloc(u8, 90);
+        errdefer allocator.free(buf);
+        
         var key_finder = try SingleByteXorKeyFinder.init(allocator, Language.English);
+        var scorer = try LanguageScorer.init(allocator, language);
+
         return SingleByteXorDetector{
             .allocator = allocator,
             .language = language,
-            .scorer = try LanguageScorer.init(allocator, language),
+            .scorer = scorer,
             .key_finder = key_finder,
             .highScore = math.f32_min,
             .highScoreKey = 0,
