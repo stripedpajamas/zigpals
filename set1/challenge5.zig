@@ -1,5 +1,4 @@
 const std = @import("std");
-const Encoder = @import("./challenge1.zig").Encoder;
 const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
