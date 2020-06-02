@@ -2,7 +2,6 @@ const std = @import("std");
 const singleByteXor = @import("./challenge2.zig").singleByteXor;
 const Allocator = std.mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
-const HashMap = std.HashMap;
 const fmt = std.fmt;
 const ascii = std.ascii;
 const math = std.math;
