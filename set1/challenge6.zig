@@ -38,9 +38,9 @@ pub const RepeatedKeyXorKeyFinder = struct {
         var key_size_candidate: usize = 1;
         while (key_size_candidate <= max_key_size_candidate) : (key_size_candidate += 1) {
             const a = input[0..key_size_candidate];
-            const b = input[key_size_candidate..key_size_candidate*2];
-            const c = input[key_size_candidate*2..key_size_candidate*3];
-            const d = input[key_size_candidate*3..key_size_candidate*4];
+            const b = input[key_size_candidate .. key_size_candidate * 2];
+            const c = input[key_size_candidate * 2 .. key_size_candidate * 3];
+            const d = input[key_size_candidate * 3 .. key_size_candidate * 4];
             const distance_ab = try computeHammingDistance(a, b);
             const distance_cd = try computeHammingDistance(c, d);
             const distance_avg = (distance_ab + distance_cd) / 2.0;
@@ -81,9 +81,9 @@ test "guess repeated-key xor key size" {
     var seen: u8 = 1;
     var it = candidates.iterator();
     while (it.next()) |candidate| {
-        std.debug.warn("keysize: {}, distance: {}\n", .{candidate.keysize, candidate.distance});
+        std.debug.warn("keysize: {}, distance: {}\n", .{ candidate.keysize, candidate.distance });
         if (candidate.keysize == 7) {
-            std.debug.warn("found correct keysize ranked {} with hamming distance {}\n", .{seen, candidate.distance});
+            std.debug.warn("found correct keysize ranked {} with hamming distance {}\n", .{ seen, candidate.distance });
             break;
         }
         // assert that the correct answer is within the top 5 candidates
@@ -91,4 +91,3 @@ test "guess repeated-key xor key size" {
         seen += 1;
     }
 }
-
