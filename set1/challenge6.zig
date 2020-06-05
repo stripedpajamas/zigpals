@@ -172,10 +172,10 @@ test "break repeating-key xor" {
     var allocator = testing.allocator;
 
     var decoder = Base64DecoderWithIgnore.init(base64.standard_alphabet_chars, base64.standard_pad_char, "\n");
-    const challenge4_input_raw = @embedFile("./data/challenge6_input.txt");
-    var input_bytes = try allocator.alloc(u8, Base64DecoderWithIgnore.calcSizeUpperBound(challenge4_input_raw.len));
+    const challenge7_input_raw = @embedFile("./data/challenge6_input.txt");
+    var input_bytes = try allocator.alloc(u8, Base64DecoderWithIgnore.calcSizeUpperBound(challenge7_input_raw.len));
     defer allocator.free(input_bytes);
-    var written = try decoder.decode(input_bytes, challenge4_input_raw);
+    var written = try decoder.decode(input_bytes, challenge7_input_raw);
     var input = input_bytes[0..written];
 
     var key_finder = try RepeatedKeyXorKeyFinder.init(allocator, Language.English);
