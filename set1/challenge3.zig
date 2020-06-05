@@ -112,7 +112,6 @@ pub const LanguageScorer = struct {
 
             // penalty for absolutely nonsense
             if (!ascii.isPrint(byte) and actual_freq > 0) {
-                // std.debug.warn("\ntaking a big hit for non-printable char", .{});
                 sum_of_squared_errors += 255;
             }
         }
