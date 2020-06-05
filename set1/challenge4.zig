@@ -31,7 +31,7 @@ pub const SingleByteXorDetector = struct {
     pub fn init(allocator: *mem.Allocator, language: Language) !SingleByteXorDetector {
         var buf = try allocator.alloc(u8, 90);
         errdefer allocator.free(buf);
-        
+
         var key_finder = try SingleByteXorKeyFinder.init(allocator, Language.English);
         var scorer = try LanguageScorer.init(allocator, language);
 
@@ -112,7 +112,7 @@ test "detect single byte xor" {
     const detectionResult = detector.getMostLikelySample();
     std.debug.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});
 
-    std.debug.warn("\nenc: {}\ndec: {}\nkey: {}\n", .{
+    std.debug.warn("\nenc: {x}\ndec: {}\nkey: {}\n", .{
         detectionResult.enc,
         detectionResult.dec,
         detectionResult.key,

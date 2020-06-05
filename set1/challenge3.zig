@@ -15,7 +15,7 @@ pub const Language = enum {
 // a comptime lookup table of u8 -> f32
 // this is mostly a convenience since its known that all the keys will be unique
 // any bytes that aren't specified in the input are considered to occur 0% in normal text
-pub fn FrequencyLookupTable(comptime byteFrequencies: var) [255]f32 {
+pub fn frequencyLookupTable(comptime byteFrequencies: var) [255]f32 {
     var entries = [1]f32{0.0} ** 255;
     for (byteFrequencies) |kv| {
         var byte: u8 = kv[0];
@@ -28,34 +28,35 @@ pub fn FrequencyLookupTable(comptime byteFrequencies: var) [255]f32 {
     return entries;
 }
 
-pub const EnglishLetterFrequencies = FrequencyLookupTable(.{
-    .{ ' ', 0.1918 },
-    .{ 'a', 0.0834 },
-    .{ 'b', 0.0154 },
-    .{ 'c', 0.0273 },
-    .{ 'd', 0.0414 },
-    .{ 'e', 0.1260 },
-    .{ 'f', 0.0203 },
-    .{ 'g', 0.0192 },
-    .{ 'h', 0.0611 },
-    .{ 'i', 0.0671 },
-    .{ 'j', 0.0023 },
-    .{ 'k', 0.0087 },
-    .{ 'l', 0.0424 },
-    .{ 'm', 0.0253 },
-    .{ 'n', 0.0680 },
-    .{ 'o', 0.0770 },
-    .{ 'p', 0.0166 },
-    .{ 'q', 0.0009 },
-    .{ 'r', 0.0568 },
-    .{ 's', 0.0611 },
-    .{ 't', 0.0937 },
-    .{ 'u', 0.0285 },
-    .{ 'v', 0.0106 },
-    .{ 'w', 0.0234 },
-    .{ 'x', 0.0020 },
-    .{ 'y', 0.0204 },
-    .{ 'z', 0.0006 },
+pub const EnglishLetterFrequencies = frequencyLookupTable(.{
+    .{ '.', 9.0000 }, // represents punctuation and digits
+    .{ ' ', 19.180 },
+    .{ 'a', 8.3400 },
+    .{ 'b', 1.5400 },
+    .{ 'c', 2.7300 },
+    .{ 'd', 4.1400 },
+    .{ 'e', 12.600 },
+    .{ 'f', 2.0300 },
+    .{ 'g', 1.9200 },
+    .{ 'h', 6.1100 },
+    .{ 'i', 6.7100 },
+    .{ 'j', 0.2300 },
+    .{ 'k', 0.8700 },
+    .{ 'l', 4.2400 },
+    .{ 'm', 2.5300 },
+    .{ 'n', 6.8000 },
+    .{ 'o', 7.7000 },
+    .{ 'p', 1.6600 },
+    .{ 'q', 0.0900 },
+    .{ 'r', 5.6800 },
+    .{ 's', 6.1100 },
+    .{ 't', 9.3700 },
+    .{ 'u', 2.8500 },
+    .{ 'v', 1.0600 },
+    .{ 'w', 2.3400 },
+    .{ 'x', 0.2000 },
+    .{ 'y', 2.0400 },
+    .{ 'z', 0.0600 },
 });
 
 pub const LanguageScorer = struct {
@@ -76,7 +77,7 @@ pub const LanguageScorer = struct {
             .allocator = allocator,
             .language = language,
             .letter_frequencies = letter_frequencies,
-            .text = text
+            .text = text,
         };
     }
 
@@ -89,26 +90,34 @@ pub const LanguageScorer = struct {
         const text = try self.toLower(input);
 
         self.letter_frequencies.clear();
+        var char_count: f32 = 0;
         for (text) |letter| {
-            _ = try self.letter_frequencies.put(letter, 1.0 + (self.letter_frequencies.getValue(letter) orelse 0.0));
+            const freq_key = if (ascii.isPunct(letter) or ascii.isDigit(letter)) '.' else letter;
+            if (ascii.isAlpha(freq_key) or freq_key == ' ' or freq_key == '.') {
+                _ = try self.letter_frequencies.put(freq_key, 1.0 + (self.letter_frequencies.getValue(freq_key) orelse 0.0));
+                char_count += 1;
+            }
         }
-
-        const text_len = @intToFloat(f32, text.len);
 
         const freq_table = switch (self.language) {
             Language.English => EnglishLetterFrequencies,
         };
 
-        var _score: f32 = 1.0;
-        var ltr: u8 = 0;
-        while (ltr < 255) : (ltr += 1) {
-            const actual_freq = (self.letter_frequencies.getValue(ltr) orelse 0.0) / text_len;
-            const expected_freq = freq_table[ltr];
-            const diff = math.absFloat(expected_freq - actual_freq);
-            _score -= diff;
+        var sum_of_squared_errors: f32 = 0;
+        var byte: u8 = 0;
+        while (byte < 255) : (byte += 1) {
+            const actual_freq = (self.letter_frequencies.getValue(byte) orelse 0.0) / char_count * 100;
+            const expected_freq = freq_table[byte];
+            sum_of_squared_errors += math.pow(f32, expected_freq - actual_freq, 2);
+
+            // penalty for absolutely nonsense
+            if (!ascii.isPrint(byte) and actual_freq > 0) {
+                // std.debug.warn("\ntaking a big hit for non-printable char", .{});
+                sum_of_squared_errors += 255;
+            }
         }
 
-        return _score;
+        return 100 - (sum_of_squared_errors / 255);
     }
 
     fn toLower(self: *LanguageScorer, input: []const u8) ![]u8 {
@@ -127,7 +136,7 @@ pub const SingleByteXorKeyFinder = struct {
     allocator: *Allocator,
     language: Language,
 
-    keyScores: AutoHashMap(u8, f32),
+    key_scores: AutoHashMap(u8, f32),
     scorer: LanguageScorer,
     dec: []u8,
     buf: []u8,
@@ -136,8 +145,8 @@ pub const SingleByteXorKeyFinder = struct {
         var buf = try allocator.alloc(u8, 30);
         errdefer allocator.free(buf);
 
-        var keyScores = AutoHashMap(u8, f32).init(allocator);
-        errdefer keyScores.deinit();
+        var key_scores = AutoHashMap(u8, f32).init(allocator);
+        errdefer key_scores.deinit();
 
         var scorer = try LanguageScorer.init(allocator, language);
         errdefer scorer.deinit();
@@ -145,7 +154,7 @@ pub const SingleByteXorKeyFinder = struct {
         return SingleByteXorKeyFinder{
             .allocator = allocator,
             .language = language,
-            .keyScores = keyScores,
+            .key_scores = key_scores,
             .scorer = scorer,
             .dec = buf[0..30],
             .buf = buf,
@@ -154,7 +163,7 @@ pub const SingleByteXorKeyFinder = struct {
 
     pub fn deinit(self: *SingleByteXorKeyFinder) void {
         self.allocator.free(self.buf);
-        self.keyScores.deinit();
+        self.key_scores.deinit();
         self.scorer.deinit();
     }
 
@@ -167,20 +176,20 @@ pub const SingleByteXorKeyFinder = struct {
         var key: u8 = 0;
         while (key < 255) : (key += 1) {
             try singleByteXor(dec, enc, key);
-            _ = try self.keyScores.put(key, try self.scorer.score(dec));
+            _ = try self.key_scores.put(key, try self.scorer.score(dec));
         }
 
-        var highScoreKey: u8 = 0;
-        var highScore: f32 = math.f32_min;
-        var it = self.keyScores.iterator();
+        var high_score_key: u8 = 0;
+        var high_score: f32 = -math.f32_max;
+        var it = self.key_scores.iterator();
         while (it.next()) |entry| {
-            if (entry.value > highScore) {
-                highScore = entry.value;
-                highScoreKey = entry.key;
+            if (entry.value > high_score) {
+                high_score = entry.value;
+                high_score_key = entry.key;
             }
         }
 
-        return highScoreKey;
+        return high_score_key;
     }
 };
 
@@ -195,6 +204,12 @@ test "language scorer" {
 
     score_eng = try scorer.score("YOU CAN GET BACK TO ENJOYING YOUR NEW HYUNDAI");
     score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
+
+    std.debug.warn("\nscore_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
+    assert(score_eng > score_gib);
+
+    score_eng = try scorer.score(" olceiom c  ho nuce  st2sl  k,\notl'eol e rldtspas yaandnou rsogmctiy,aeo doo ct a k tf,fwoif  s aet");
+    score_gib = try scorer.score("e*)& ,*(e&ee-*e+0& ee61w6)ee.iO*1)b *)e e7)!165$6e<$$+!+*0e76*\"(&1,<i$ *e!**e&1e$e.e1#i#2*,#ee6e$ 1");
 
     std.debug.warn("\nscore_eng: {} :: score_gib: {}\n", .{ score_eng, score_gib });
     assert(score_eng > score_gib);
