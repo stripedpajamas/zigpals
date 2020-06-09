@@ -174,7 +174,7 @@ pub const SingleByteXorKeyFinder = struct {
 
         var key: u8 = 0;
         while (key < 255) : (key += 1) {
-            try singleByteXor(dec, enc, key);
+            singleByteXor(dec, enc, key);
             _ = try self.key_scores.put(key, try self.scorer.score(dec));
         }
 
@@ -225,7 +225,7 @@ test "find single byte xor key" {
 
     var dec = try testing.allocator.alloc(u8, 34);
     defer testing.allocator.free(dec);
-    try singleByteXor(dec, enc, key);
+    singleByteXor(dec, enc, key);
     std.debug.warn("\ndetermined key to be: {}\ndecrypted: {}\n\n", .{ key, dec });
 
     assert(key == 88);

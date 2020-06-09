@@ -58,7 +58,7 @@ pub const SingleByteXorDetector = struct {
     pub fn addSample(self: *SingleByteXorDetector, enc: []const u8) !void {
         const key = try self.key_finder.findKey(enc);
         var dec = self.dec[0..enc.len];
-        try singleByteXor(dec, enc, key);
+        singleByteXor(dec, enc, key);
 
         const score = try self.scorer.score(dec);
 
