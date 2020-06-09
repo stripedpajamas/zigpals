@@ -97,17 +97,13 @@ test "detect single byte xor" {
     var detector = try SingleByteXorDetector.init(allocator, Language.English);
     defer detector.deinit();
 
-    var enc = try allocator.alloc(u8, 30);
+    var enc: [30]u8 = undefined;
     var input_it = mem.split(challenge4_input_raw, "\n");
     while (input_it.next()) |line| {
         var line_size = line.len / 2;
-        if (line_size > enc.len) {
-            enc = try allocator.realloc(enc, line_size);
-        }
         try fmt.hexToBytes(enc[0..line_size], line);
         try detector.addSample(enc[0..line_size]);
     }
-    allocator.free(enc);
 
     const detectionResult = detector.getMostLikelySample();
     std.debug.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});

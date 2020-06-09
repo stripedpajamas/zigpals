@@ -215,17 +215,14 @@ test "language scorer" {
 }
 
 test "find single byte xor key" {
-    var enc = try testing.allocator.alloc(u8, 34);
-    defer testing.allocator.free(enc);
-    try fmt.hexToBytes(enc, "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736");
+    var enc = [_]u8{ 0x1b, 0x37, 0x37, 0x33, 0x31, 0x36, 0x3f, 0x78, 0x15, 0x1b, 0x7f, 0x2b, 0x78, 0x34, 0x31, 0x33, 0x3d, 0x78, 0x39, 0x78, 0x28, 0x37, 0x2d, 0x36, 0x3c, 0x78, 0x37, 0x3e, 0x78, 0x3a, 0x39, 0x3b, 0x37, 0x36 };
 
     var key_finder = try SingleByteXorKeyFinder.init(testing.allocator, Language.English);
     defer key_finder.deinit();
-    const key = try key_finder.findKey(enc);
+    const key = try key_finder.findKey(enc[0..]);
 
-    var dec = try testing.allocator.alloc(u8, 34);
-    defer testing.allocator.free(dec);
-    singleByteXor(dec, enc, key);
+    var dec: [34]u8 = undefined;
+    singleByteXor(dec[0..], enc[0..], key);
     std.debug.warn("\ndetermined key to be: {}\ndecrypted: {}\n\n", .{ key, dec });
 
     assert(key == 88);

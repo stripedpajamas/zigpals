@@ -21,24 +21,21 @@ pub fn decryptEcb(dst: []u8, src: []const u8, key: [16]u8) void {
 }
 
 test "aes ecb" {
-    var allocator = testing.allocator;
-
-    var decoder = Base64DecoderWithIgnore.init(base64.standard_alphabet_chars, base64.standard_pad_char, "\n");
     const challenge7_input_raw = @embedFile("./data/challenge7_input.txt");
-    var input_bytes = try allocator.alloc(u8, Base64DecoderWithIgnore.calcSizeUpperBound(challenge7_input_raw.len));
-    defer allocator.free(input_bytes);
-    var written = try decoder.decode(input_bytes, challenge7_input_raw);
+    var decoder = Base64DecoderWithIgnore.init(base64.standard_alphabet_chars, base64.standard_pad_char, "\n");
+    var input_bytes: [Base64DecoderWithIgnore.calcSizeUpperBound(challenge7_input_raw.len)]u8 = undefined;
+    var written = try decoder.decode(input_bytes[0..], challenge7_input_raw);
 
     var enc = input_bytes[0..written];
 
-    const key = [16]u8{ 'Y', 'E', 'L', 'L', 'O', 'W', ' ', 'S', 'U', 'B', 'M', 'A', 'R', 'I', 'N', 'E' };
-    const dec = try allocator.alloc(u8, enc.len);
-    defer allocator.free(dec);
-    decryptEcb(dec, enc, key);
+    const key = [_]u8{ 'Y', 'E', 'L', 'L', 'O', 'W', ' ', 'S', 'U', 'B', 'M', 'A', 'R', 'I', 'N', 'E' };
+    var dec_buf: [input_bytes.len]u8 = undefined;
+    var dec = dec_buf[0..written];
+    decryptEcb(dec[0..written], enc[0..], key);
 
     std.debug.warn("\ngot this plaintext:\n{}\n", .{dec});
 
-    encryptEcb(dec, dec, key);
+    encryptEcb(dec[0..], dec[0..], key);
 
-    testing.expectEqualSlices(u8, dec, enc);
+    testing.expectEqualSlices(u8, dec[0..], enc);
 }

@@ -96,7 +96,7 @@ pub const RepeatedKeyXorKeyFinder = struct {
             k.* = try self.sk_key_finder.findKey(buf[0..buf_idx]);
         }
 
-        try repeatedKeyXor(buf, input, key);
+        repeatedKeyXor(buf, input, key);
         var score = try self.scorer.score(buf);
 
         return KeyCandidate{
@@ -115,10 +115,10 @@ pub const RepeatedKeyXorKeyFinder = struct {
             const b = input[key_size_candidate .. key_size_candidate * 2];
             const c = input[key_size_candidate * 2 .. key_size_candidate * 3];
             const d = input[key_size_candidate * 3 .. key_size_candidate * 4];
-            const distance_ab = try computeHammingDistance(a, b);
-            const distance_bc = try computeHammingDistance(b, c);
-            const distance_cd = try computeHammingDistance(c, d);
-            const distance_da = try computeHammingDistance(d, a);
+            const distance_ab = computeHammingDistance(a, b);
+            const distance_bc = computeHammingDistance(b, c);
+            const distance_cd = computeHammingDistance(c, d);
+            const distance_da = computeHammingDistance(d, a);
             const distance_avg = (distance_ab + distance_bc + distance_cd + distance_da) / 4.0;
             const normalized_distance = distance_avg / @intToFloat(f32, key_size_candidate);
             try self.candidates.add(KeysizeCandidate{
@@ -131,7 +131,7 @@ pub const RepeatedKeyXorKeyFinder = struct {
     }
 };
 
-pub fn computeHammingDistance(a: []const u8, b: []const u8) !f32 {
+pub fn computeHammingDistance(a: []const u8, b: []const u8) f32 {
     assert(a.len == b.len);
     var distance: f32 = 0;
     for (a) |byte, idx| {
@@ -141,41 +141,41 @@ pub fn computeHammingDistance(a: []const u8, b: []const u8) !f32 {
 }
 
 test "hamming distance" {
-    const hd = try computeHammingDistance("wokka wokka!!!", "this is a test");
+    const hd = computeHammingDistance("wokka wokka!!!", "this is a test");
     assert(hd == 37);
 }
 
 test "guess repeated-key xor key size" {
-    var enc = try testing.allocator.alloc(u8, 29);
-    defer testing.allocator.free(enc);
-    try repeatedKeyXor(enc, "hello world and goodbye world", "iceypop");
+    const input = "hello world and goodbye world";
+    var enc: [input.len]u8 = undefined;
+    repeatedKeyXor(enc[0..], input, "iceypop");
 
     var key_finder = try RepeatedKeyXorKeyFinder.init(testing.allocator, Language.English);
     defer key_finder.deinit();
-    var candidates = try key_finder.getKeysizeCandidates(enc);
-    std.debug.warn("\n", .{});
-    var seen: u8 = 1;
+
+    var candidates = try key_finder.getKeysizeCandidates(enc[0..]);
+
+    var seen: u8 = 0;
     var it = candidates.iterator();
     while (it.next()) |candidate| {
-        std.debug.warn("keysize: {}, distance: {}\n", .{ candidate.keysize, candidate.distance });
+        seen += 1;
+        std.debug.warn("\nkeysize: {}, distance: {}", .{ candidate.keysize, candidate.distance });
         if (candidate.keysize == 7) {
-            std.debug.warn("found correct keysize ranked {} with hamming distance {}\n", .{ seen, candidate.distance });
+            std.debug.warn("\nfound correct keysize ranked {} with hamming distance {}\n", .{ seen, candidate.distance });
             break;
         }
         // assert that the correct answer is within the top 5 candidates
         assert(seen < 5);
-        seen += 1;
     }
 }
 
 test "break repeating-key xor" {
     var allocator = testing.allocator;
 
-    var decoder = Base64DecoderWithIgnore.init(base64.standard_alphabet_chars, base64.standard_pad_char, "\n");
     const challenge7_input_raw = @embedFile("./data/challenge6_input.txt");
-    var input_bytes = try allocator.alloc(u8, Base64DecoderWithIgnore.calcSizeUpperBound(challenge7_input_raw.len));
-    defer allocator.free(input_bytes);
-    var written = try decoder.decode(input_bytes, challenge7_input_raw);
+    var decoder = Base64DecoderWithIgnore.init(base64.standard_alphabet_chars, base64.standard_pad_char, "\n");
+    var input_bytes: [Base64DecoderWithIgnore.calcSizeUpperBound(challenge7_input_raw.len)]u8 = undefined;
+    var written = try decoder.decode(input_bytes[0..], challenge7_input_raw);
     var input = input_bytes[0..written];
 
     var key_finder = try RepeatedKeyXorKeyFinder.init(allocator, Language.English);
@@ -188,6 +188,6 @@ test "break repeating-key xor" {
 
     std.debug.warn("\nfound this key: {}", .{key});
 
-    try repeatedKeyXor(input, input, key);
+    repeatedKeyXor(input, input, key);
     std.debug.warn("\nfound this plaintext:\n{}\n", .{input});
 }

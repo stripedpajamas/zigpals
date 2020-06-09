@@ -3,7 +3,7 @@ const fmt = std.fmt;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-pub fn repeatedKeyXor(out: []u8, input: []const u8, key: []const u8) !void {
+pub fn repeatedKeyXor(out: []u8, input: []const u8, key: []const u8) void {
     assert(out.len == input.len);
     const outSlice = out[0..out.len];
 
@@ -15,15 +15,12 @@ pub fn repeatedKeyXor(out: []u8, input: []const u8, key: []const u8) !void {
 }
 
 test "repeated key xor" {
-    const inputText = "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
+    const input_text = "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal";
     const key = "ICE";
-    const expectedOut = try testing.allocator.alloc(u8, inputText.len);
-    defer testing.allocator.free(expectedOut);
-    try fmt.hexToBytes(expectedOut, "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f");
+    const expected = [_]u8{ 0x0b, 0x36, 0x37, 0x27, 0x2a, 0x2b, 0x2e, 0x63, 0x62, 0x2c, 0x2e, 0x69, 0x69, 0x2a, 0x23, 0x69, 0x3a, 0x2a, 0x3c, 0x63, 0x24, 0x20, 0x2d, 0x62, 0x3d, 0x63, 0x34, 0x3c, 0x2a, 0x26, 0x22, 0x63, 0x24, 0x27, 0x27, 0x65, 0x27, 0x2a, 0x28, 0x2b, 0x2f, 0x20, 0x43, 0x0a, 0x65, 0x2e, 0x2c, 0x65, 0x2a, 0x31, 0x24, 0x33, 0x3a, 0x65, 0x3e, 0x2b, 0x20, 0x27, 0x63, 0x0c, 0x69, 0x2b, 0x20, 0x28, 0x31, 0x65, 0x28, 0x63, 0x26, 0x30, 0x2e, 0x27, 0x28, 0x2f };
 
-    const actualOut = try testing.allocator.alloc(u8, expectedOut.len);
-    defer testing.allocator.free(actualOut);
-    try repeatedKeyXor(actualOut, inputText, key);
+    var actual: [expected.len]u8 = undefined;
+    repeatedKeyXor(actual[0..], input_text, key);
 
-    testing.expectEqualSlices(u8, expectedOut, actualOut);
+    testing.expectEqualSlices(u8, expected[0..], actual[0..]);
 }
