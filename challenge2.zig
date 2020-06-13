@@ -12,7 +12,7 @@ pub fn singleByteXor(out: []u8, input: []const u8, key: u8) void {
     }
 }
 
-pub fn fixedXor(out: []u8, input: []const u8, key: []u8) void {
+pub fn fixedXor(out: []u8, input: []const u8, key: []const u8) void {
     assert(out.len == input.len and input.len == key.len);
     const outSlice = out[0..out.len];
 
