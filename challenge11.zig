@@ -2,6 +2,7 @@ const std = @import("std");
 const ecb = @import("./challenge7.zig");
 const cbc = @import("./challenge10.zig");
 const pad = @import("./challenge9.zig");
+const assert = std.debug.assert;
 const mem = std.mem;
 const crypto = std.crypto;
 const testing = std.testing;
@@ -27,20 +28,34 @@ pub fn encryptionOracle(allocator: *mem.Allocator, plaintext: []const u8) !Oracl
     var key: [16]u8 = undefined;
     rng.random.bytes(&key);
 
-    const input = try pad.allocPkcsPad(allocator, 16, plaintext);
-    defer allocator.free(input);
+    const garbage_prefix_len = rng.random.intRangeLessThan(usize, 5, 10);
+    const garbage_suffix_len = rng.random.intRangeLessThan(usize, 5, 10);
+    const dirtied_len = garbage_prefix_len + plaintext.len + garbage_suffix_len;
+    const padded_dirtied_len = pad.calcWithPkcsSize(16, dirtied_len);
+    const dirtied_input = try allocator.alloc(u8, padded_dirtied_len);
+    defer allocator.free(dirtied_input);
+
+    try crypto.randomBytes(dirtied_input[0..garbage_prefix_len]);
+    for (plaintext) |byte, idx| {
+        dirtied_input[garbage_prefix_len+idx] = byte;
+    }
+    try crypto.randomBytes(dirtied_input[dirtied_len-garbage_suffix_len..dirtied_len]);
+
+    pad.pkcsPad(16, dirtied_input, dirtied_input[0..dirtied_len]);
     
-    var ciphertext = try allocator.alloc(u8, input.len);
+    var ciphertext = try allocator.alloc(u8, dirtied_input.len);
+    errdefer allocator.free(ciphertext);
+
     var mode = if (rng.random.boolean()) AesMode.CBC else AesMode.ECB;
     var iv: [16]u8 = undefined;
 
     switch (mode) {
         AesMode.CBC => {
             rng.random.bytes(&iv);
-            cbc.encryptCbc(ciphertext, input, key, iv);
+            cbc.encryptCbc(ciphertext, dirtied_input, key, iv);
         },
         AesMode.ECB => {
-            ecb.encryptEcb(ciphertext, input, key);
+            ecb.encryptEcb(ciphertext, dirtied_input, key);
         }
     }
 
@@ -52,8 +67,9 @@ pub fn encryptionOracle(allocator: *mem.Allocator, plaintext: []const u8) !Oracl
 }
 
 test "encryption oracle" {
-    var result = try encryptionOracle(testing.allocator, "hello world");
-    std.debug.warn("\nciphertext: {x}\nmode: {}\n", .{result.ciphertext, result.mode});
-
-    testing.allocator.free(result.ciphertext);
+    var result1 = try encryptionOracle(testing.allocator, "hello world");
+    var result2 = try encryptionOracle(testing.allocator, "hello world");
+    assert(!mem.eql(u8, result1.ciphertext, result2.ciphertext));
+    testing.allocator.free(result1.ciphertext);
+    testing.allocator.free(result2.ciphertext);
 }
