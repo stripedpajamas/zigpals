@@ -14,7 +14,7 @@ pub const AesMode = enum {
 };
 
 pub const OracleResult = struct {
-    ciphertext: []u8, iv: [16]u8, mode: AesMode
+    ciphertext: []u8, iv: []u8, mode: AesMode
 };
 
 pub fn EncryptionOracle(comptime keysize: usize) type {
@@ -36,11 +36,11 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
         }
 
         pub fn deinit(self: *Self) void {
-            self.rng.deinit();
         }
 
+        // caller is responsible to free result.ciphertext and result.iv
         pub fn encrypt(self: *Self, plaintext: []const u8) !OracleResult {
-            var key: [16]u8 = undefined;
+            var key: [keysize/8]u8 = undefined;
             self.rng.random.bytes(&key);
 
             const garbage_prefix_len = self.rng.random.intRangeLessThan(usize, 5, 10);
@@ -59,15 +59,15 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             pad.pkcsPad(16, dirtied_input, dirtied_input[0..dirtied_len]);
 
             var ciphertext = try self.allocator.alloc(u8, dirtied_input.len);
-            errdefer allocator.free(ciphertext);
+            errdefer self.allocator.free(ciphertext);
 
             var mode = if (self.rng.random.boolean()) AesMode.CBC else AesMode.ECB;
-            var iv: [16]u8 = undefined;
-
+            var iv = try self.allocator.alloc(u8, keysize/8);
+            
             switch (mode) {
                 AesMode.CBC => {
-                    self.rng.random.bytes(&iv);
-                    cbc.encryptCbc(ciphertext, dirtied_input, key, iv);
+                    self.rng.random.bytes(iv);
+                    cbc.encryptCbc(ciphertext, dirtied_input, key, iv[0..keysize/8].*);
                 },
                 AesMode.ECB => {
                     ecb.encryptEcb(ciphertext, dirtied_input, key);
@@ -87,6 +87,7 @@ pub fn detectMode(comptime keysize: usize, oracle: *EncryptionOracle(keysize)) !
     const pt = [1]u8{'A'} ** (keysize * 3);
     const enc = try oracle.encrypt(&pt);
     defer oracle.allocator.free(enc.ciphertext);
+    defer oracle.allocator.free(enc.iv);
 
     var det = detector.AesEcbDetector(keysize).init(oracle.allocator);
     defer det.deinit();
@@ -103,15 +104,18 @@ test "encryption oracle" {
     defer oracle.deinit();
 
     var result1 = try oracle.encrypt("hello world");
+    defer allocator.free(result1.ciphertext);
+    defer allocator.free(result1.iv);
     var result2 = try oracle.encrypt("hello world");
+    defer allocator.free(result2.ciphertext);
+    defer allocator.free(result2.iv);
     assert(!mem.eql(u8, result1.ciphertext, result2.ciphertext));
-    allocator.free(result1.ciphertext);
-    allocator.free(result2.ciphertext);
 }
 
 test "detect oracle output" {
     var allocator = testing.allocator;
     var oracle = try EncryptionOracle(128).init(allocator);
+    defer oracle.deinit();
 
     var count: usize = 0;
     while (count < 10) : (count += 1) {
