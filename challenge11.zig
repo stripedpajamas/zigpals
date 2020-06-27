@@ -46,7 +46,7 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             const garbage_prefix_len = self.rng.random.intRangeLessThan(usize, 5, 10);
             const garbage_suffix_len = self.rng.random.intRangeLessThan(usize, 5, 10);
             const dirtied_len = garbage_prefix_len + plaintext.len + garbage_suffix_len;
-            const padded_dirtied_len = pad.calcWithPkcsSize(16, dirtied_len);
+            const padded_dirtied_len = pad.calcWithPkcsSize(keysize/8, dirtied_len);
             const dirtied_input = try self.allocator.alloc(u8, padded_dirtied_len);
             defer self.allocator.free(dirtied_input);
 
@@ -56,7 +56,7 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             }
             try crypto.randomBytes(dirtied_input[dirtied_len - garbage_suffix_len .. dirtied_len]);
 
-            pad.pkcsPad(16, dirtied_input, dirtied_input[0..dirtied_len]);
+            pad.pkcsPad(keysize/8, dirtied_input, dirtied_input[0..dirtied_len]);
 
             var ciphertext = try self.allocator.alloc(u8, dirtied_input.len);
             errdefer self.allocator.free(ciphertext);

@@ -59,6 +59,14 @@ pub const EnglishLetterFrequencies = frequencyLookupTable(.{
     .{ 'z', 0.0600 },
 });
 
+fn toLower(output: []u8, input: []const u8) void {
+    assert(output.len >= input.len);
+    var text = output[0..input.len];
+    for (text) |*c, i| {
+        c.* = ascii.toLower(input[i]);
+    }
+}
+
 pub const LanguageScorer = struct {
     allocator: *Allocator,
     language: Language,
@@ -87,7 +95,11 @@ pub const LanguageScorer = struct {
     }
 
     pub fn score(self: *LanguageScorer, input: []const u8) !f32 {
-        const text = try self.toLower(input);
+        if (self.text.len < input.len) {
+            self.text = try self.allocator.realloc(self.text, input.len);
+        }
+        toLower(self.text, input);
+        const text = self.text;
 
         self.letter_frequencies.clear();
         var char_count: f32 = 0;
@@ -119,16 +131,6 @@ pub const LanguageScorer = struct {
         return 100 - (sum_of_squared_errors / 255);
     }
 
-    fn toLower(self: *LanguageScorer, input: []const u8) ![]u8 {
-        if (self.text.len < input.len) {
-            self.text = try self.allocator.realloc(self.text, input.len);
-        }
-        var text = self.text[0..input.len];
-        for (text) |*c, i| {
-            c.* = ascii.toLower(input[i]);
-        }
-        return text;
-    }
 };
 
 pub const SingleByteXorKeyFinder = struct {
