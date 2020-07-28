@@ -31,7 +31,7 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
         pub fn deinit(self: *Self) void {
         }
 
-        pub fn encrypt(self: *Self, plaintext: []const u8) ![]u8 {
+        pub fn encrypt(self: *const Self, plaintext: []const u8) ![]u8 {
             var secret_and_plaintext = try self.createInput(plaintext);
             defer self.allocator.free(secret_and_plaintext);
 
@@ -42,7 +42,7 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             return ciphertext;
         }
 
-        fn createInput(self: *Self, plaintext: []const u8) ![]u8 {
+        fn createInput(self: *const Self, plaintext: []const u8) ![]u8 {
             const padded_len = pad.calcWithPkcsSize(keysize/8, secret_suffix.len + plaintext.len);
             var secret_and_plaintext = try self.allocator.alloc(u8, padded_len);
 
@@ -60,7 +60,46 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             return secret_and_plaintext;
         }
     };
+}
 
+pub fn discoverBlockSize(allocator: *mem.Allocator, oracle: EncryptionOracle(128)) !u32 {
+    // detect block size
+    // 1. begin with input of size 1 (smallest) and make note of size
+    // 2. grow input until size changes; make note of new size
+    // 3. block size == size(2) - size(1)
+   
+    // limiting max blocksize to 256 
+    var payload = try allocator.alloc(u8, 256);
+    defer allocator.free(payload);
+
+    // fill payload with something meaningless but not undefined
+    for (payload) |*byte| {
+        byte.* = 'A';
+    }
+
+
+    // get initial size of encryption
+    var initial = try oracle.encrypt(payload[0..1]);
+    var initial_size = initial.len;
+    defer allocator.free(initial);
+
+    var size: usize = 1;
+    while (size < payload.len) : (size += 1) {
+        payload[size - 1] = 'A';
+        var enc = try oracle.encrypt(payload[0..size]);
+        defer allocator.free(enc);
+
+        if (enc.len > initial_size) return @truncate(u32, enc.len - initial_size);
+    }
+
+    return error.BlockSizeTooLarge;
+}
+
+pub fn discoverSecretSuffix(allocator: *mem.Allocator, oracle: EncryptionOracle(128)) !void {
+    const blocksize = try discoverBlockSize(allocator, oracle);
+    std.debug.warn("\nfound the blocksize: {}", .{blocksize});
+    var enc = try oracle.encrypt("hello world");
+    allocator.free(enc);
 }
 
 test "byte-at-a-time ecb decryption (simple)" {
@@ -68,7 +107,7 @@ test "byte-at-a-time ecb decryption (simple)" {
     var oracle = try EncryptionOracle(128).init(allocator);
     defer oracle.deinit();
 
-    discoverSecretSuffix();
+    try discoverSecretSuffix(allocator, oracle);
 }
 
 test "basic oracle encryption" {
