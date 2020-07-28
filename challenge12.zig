@@ -13,7 +13,6 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
         var key: [keysize/8]u8 = undefined;
 
         allocator: *mem.Allocator,
-        rng: std.rand.DefaultCsprng,
 
         pub fn init(allocator: *mem.Allocator) !Self {
             var buf: [8]u8 = undefined;
@@ -26,7 +25,6 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
 
             return Self{
                 .allocator = allocator,
-                .rng = rng, 
             };
         }
 
@@ -70,7 +68,14 @@ test "byte-at-a-time ecb decryption (simple)" {
     var oracle = try EncryptionOracle(128).init(allocator);
     defer oracle.deinit();
 
+    discoverSecretSuffix();
+}
+
+test "basic oracle encryption" {
+    const allocator = testing.allocator;
+    var oracle = try EncryptionOracle(128).init(allocator);
+    defer oracle.deinit();
+
     var ciphertext = try oracle.encrypt("hello world");
-    std.debug.warn("\nciphertext! {x}\n", .{ciphertext});
     allocator.free(ciphertext);
 }

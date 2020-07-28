@@ -184,7 +184,7 @@ test "break repeating-key xor" {
     var key = try key_finder.findKey(input);
     defer allocator.free(key);
 
-    testing.expectEqualStrings(key, "Terminator X: Bring the noise");
+    testing.expectEqualSlices(u8, key, "Terminator X: Bring the noise");
 
     std.debug.warn("\nfound this key: {}", .{key});
 

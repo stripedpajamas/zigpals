@@ -45,7 +45,7 @@ pub fn AesEcbDetector(comptime keysize: usize) type {
 
         pub fn addSample(self: *Self, enc: []const u8) !void {
             if (try self.isEcb(enc)) {
-                var enc_copy = try mem.Allocator.dupe(self.allocator, u8, enc);
+                var enc_copy = try mem.dupe(self.allocator, u8, enc);
                 try self.samples.append(enc_copy);
             }
         }
