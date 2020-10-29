@@ -2,6 +2,7 @@ const std = @import("std");
 const ecb = @import("./challenge7.zig");
 const pad = @import("./challenge9.zig");
 const StringHashMap = std.StringHashMap;
+const assert = std.debug.assert;
 const crypto = std.crypto;
 const mem = std.mem;
 const testing = std.testing;
@@ -47,13 +48,10 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             var secret_and_plaintext = try self.allocator.alloc(u8, padded_len);
 
             // create (plaintext || suffix)
+            mem.copy(u8, secret_and_plaintext, plaintext);
             var idx: usize = 0;
-            while (idx < plaintext.len) : (idx += 1) {
-                secret_and_plaintext[idx + secret_suffix.len] = plaintext[idx];
-            }
-            idx = 0;
             while (idx < secret_suffix.len) : (idx += 1) {
-                secret_and_plaintext[idx] = secret_suffix[idx];
+                secret_and_plaintext[plaintext.len + idx] = secret_suffix[idx];
             }
 
             pad.pkcsPad(keysize / 8, secret_and_plaintext, secret_and_plaintext[0 .. secret_suffix.len + plaintext.len]);
@@ -121,12 +119,46 @@ pub fn isOracleECB(allocator: *mem.Allocator, blocksize: u32, oracle: Encryption
 
 pub fn discoverSecretSuffix(allocator: *mem.Allocator, oracle: EncryptionOracle(128)) !void {
     const blocksize = try discoverBlockSize(allocator, oracle);
-    std.debug.warn("\nfound the blocksize: {}", .{blocksize});
     const isECB = try isOracleECB(allocator, blocksize, oracle);
-    std.debug.warn("\nis it ECB? {}\n", .{isECB});
+    assert(isECB);
 
-    var enc = try oracle.encrypt("hello world");
-    allocator.free(enc);
+    // make a map of every possible last byte of a block
+    var dict = StringHashMap(u8).init(allocator);
+    defer dict.deinit();
+
+    var payload = try allocator.alloc(u8, blocksize);
+    defer allocator.free(payload);
+    for (payload) |*byte| {
+        byte.* = 'A';
+    }
+    var b: u8 = 0;
+    while (b <= 255) : (b += 1) {
+        payload[payload.len - 1] = b;
+        var enc = try oracle.encrypt(payload);
+        defer allocator.free(enc);
+        var blk = try mem.dupe(allocator, u8, enc[0..blocksize]);
+        std.debug.warn("\n{} => {x}", .{ payload, enc });
+        _ = try dict.put(blk, b);
+
+        if (b == 255) break;
+    }
+    defer freeDictionary(allocator, dict);
+
+    // encrypt blocksize-1 size payload and match the result in the dictionary
+    std.debug.warn("\npayload is: {}\n", .{payload[0 .. payload.len - 1]});
+    var enc = try oracle.encrypt(payload[0 .. payload.len - 1]);
+    defer allocator.free(enc);
+    var blk = enc[0..blocksize];
+
+    var match = dict.getValue(blk);
+    std.debug.warn("\ngot the first letter: {}\n", .{match});
+}
+
+fn freeDictionary(allocator: *mem.Allocator, dict: StringHashMap(u8)) void {
+    var it = dict.iterator();
+    while (it.next()) |kv| {
+        allocator.free(kv.key);
+    }
 }
 
 test "byte-at-a-time ecb decryption (simple)" {
@@ -135,13 +167,4 @@ test "byte-at-a-time ecb decryption (simple)" {
     defer oracle.deinit();
 
     try discoverSecretSuffix(allocator, oracle);
-}
-
-test "basic oracle encryption" {
-    const allocator = testing.allocator;
-    var oracle = try EncryptionOracle(128).init(allocator);
-    defer oracle.deinit();
-
-    var ciphertext = try oracle.encrypt("hello world");
-    allocator.free(ciphertext);
 }

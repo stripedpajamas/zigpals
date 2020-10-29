@@ -117,7 +117,7 @@ pub const LanguageScorer = struct {
 
         var sum_of_squared_errors: f32 = 0;
         var byte: u8 = 0;
-        while (byte < 255) : (byte += 1) {
+        while (byte <= 255) : (byte += 1) {
             const actual_freq = (self.letter_frequencies.getValue(byte) orelse 0.0) / char_count * 100;
             const expected_freq = freq_table[byte];
             sum_of_squared_errors += math.pow(f32, expected_freq - actual_freq, 2);
@@ -126,11 +126,12 @@ pub const LanguageScorer = struct {
             if (!ascii.isPrint(byte) and actual_freq > 0) {
                 sum_of_squared_errors += 255;
             }
+
+            if (byte == 255) break;
         }
 
         return 100 - (sum_of_squared_errors / 255);
     }
-
 };
 
 pub const SingleByteXorKeyFinder = struct {
@@ -175,9 +176,10 @@ pub const SingleByteXorKeyFinder = struct {
         var dec = self.dec[0..enc.len];
 
         var key: u8 = 0;
-        while (key < 255) : (key += 1) {
+        while (key <= 255) : (key += 1) {
             singleByteXor(dec, enc, key);
             _ = try self.key_scores.put(key, try self.scorer.score(dec));
+            if (key == 255) break;
         }
 
         var high_score_key: u8 = 0;
