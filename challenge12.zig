@@ -57,6 +57,14 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
 
             return dest;
         }
+
+        // for testing; return whether or not the secret has been found
+        pub fn verify(self: *const Self, secret: []const u8) bool {
+            if (mem.indexOf(u8, secret, secret_suffix[0..])) |idx| {
+                return true;
+            }
+            return false;
+        }
     };
 }
 
@@ -101,57 +109,68 @@ pub fn isOracleECB(comptime keysize: usize, allocator: *mem.Allocator, blocksize
     return false;
 }
 
-pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, oracle: EncryptionOracle(keysize)) !void {
+pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, oracle: EncryptionOracle(keysize)) ![]u8 {
     const blocksize = discoverBlockSize(keysize, oracle);
     const isECB = try isOracleECB(keysize, allocator, blocksize, oracle);
     assert(isECB);
 
-    var secret = ArrayList(u8).init(allocator);
+    var padded_secret_len = oracle.calcSize(0);
+    var secret = try ArrayList(u8).initCapacity(allocator, padded_secret_len);
 
     var dict = StringHashMap(u8).init(allocator);
     defer dict.deinit();
 
-    var payload = try allocator.alloc(u8, blocksize);
-    defer allocator.free(payload);
+    // make a big buffer than can hold everything we will ever need
+    var enc_buf = try allocator.alloc(u8, oracle.calcSize(padded_secret_len));
+    defer allocator.free(enc_buf);
 
-    var offset: usize = 1;
-    while (offset < blocksize) : (offset += 1) {
-        // set payload to all (A's || discovered-so-far)
-        var idx: usize = 0;
-        while (idx < payload.len - secret.items.len) : (idx += 1) {
-            payload[idx] = 'A';
+    var buf = try allocator.alloc(u8, padded_secret_len);
+    defer allocator.free(buf);
+
+    var block: usize = 0;
+    while (block < padded_secret_len / blocksize) : (block += 1) {
+        var offset: usize = 0;
+        while (offset < blocksize) : (offset += 1) {
+            var payload = buf[0 .. (block + 1) * blocksize];
+
+            // set payload to all (A's || discovered-so-far)
+            var idx: usize = 0;
+            while (idx < payload.len - secret.items.len) : (idx += 1) {
+                payload[idx] = 'A';
+            }
+            mem.copy(u8, payload[payload.len - secret.items.len - 1 ..], secret.items);
+
+            // fill dictionary with the encryption of [AAAAA..<discovered secret><b>] => b
+            freeDictionary(allocator, dict);
+            dict.clear();
+            var b: u8 = 0;
+            while (b <= 255) : (b += 1) {
+                payload[payload.len - 1] = b;
+                var enc = enc_buf[0..oracle.calcSize(payload.len)];
+                oracle.encrypt(enc, payload);
+
+                // remember just the relevant block
+                var blk = try mem.dupe(allocator, u8, enc[block * blocksize .. (block + 1) * blocksize]);
+                _ = try dict.put(blk, b);
+
+                if (b == 255) break;
+            }
+
+            // encrypt [AAAAA..], leaving last byte open for unknown letter
+            var enc_payload = payload[0 .. payload.len - secret.items.len - 1];
+            var enc = enc_buf[0..oracle.calcSize(enc_payload.len)];
+            oracle.encrypt(enc, enc_payload);
+
+            var blk = enc[block * blocksize .. (block + 1) * blocksize];
+
+            var match = dict.getValue(blk) orelse break;
+            try secret.append(match);
         }
-        mem.copy(u8, payload[payload.len - secret.items.len - 1 ..], secret.items);
-
-        // fill dictionary with the encryption of [AAAAA..<discovered secret><b>] => b
-        freeDictionary(allocator, dict);
-        dict.clear();
-        var b: u8 = 0;
-        while (b <= 255) : (b += 1) {
-            payload[payload.len - 1] = b;
-            std.debug.warn("\noffset: {}, secret: {}, payload: {}", .{ offset, secret.items, payload });
-            var enc = try oracle.encryptAlloc(payload);
-            defer allocator.free(enc);
-
-            // remember just the first block
-            var blk = try mem.dupe(allocator, u8, enc[0..blocksize]);
-            _ = try dict.put(blk, b);
-
-            if (b == 255) break;
-        }
-
-        // encrypt [AAAAA..<discovered secret>], leaving last byte open for unknown letter
-        var enc = try oracle.encryptAlloc(payload[0 .. payload.len - secret.items.len - 1]);
-        defer allocator.free(enc);
-        var blk = enc[0..blocksize];
-
-        var match = dict.getValue(blk) orelse unreachable;
-        try secret.append(match);
     }
 
     freeDictionary(allocator, dict);
-    std.debug.warn("\n{}\n", .{secret.items});
-    secret.deinit();
+
+    return secret.toOwnedSlice();
 }
 
 fn freeDictionary(allocator: *mem.Allocator, dict: StringHashMap(u8)) void {
@@ -167,5 +186,8 @@ test "byte-at-a-time ecb decryption (simple)" {
     var oracle = try EncryptionOracle(keysize).init(allocator);
     defer oracle.deinit();
 
-    try discoverSecretSuffix(keysize, allocator, oracle);
+    var secret = try discoverSecretSuffix(keysize, allocator, oracle);
+    defer allocator.free(secret);
+
+    assert(oracle.verify(secret));
 }
