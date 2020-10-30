@@ -2,6 +2,7 @@ const std = @import("std");
 const ecb = @import("./challenge7.zig");
 const pad = @import("./challenge9.zig");
 const StringHashMap = std.StringHashMap;
+const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 const crypto = std.crypto;
 const mem = std.mem;
@@ -32,76 +33,59 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
 
         pub fn deinit(self: *Self) void {}
 
-        pub fn encrypt(self: *const Self, plaintext: []const u8) ![]u8 {
-            var secret_and_plaintext = try self.createInput(plaintext);
-            defer self.allocator.free(secret_and_plaintext);
-
-            var ciphertext = try self.allocator.alloc(u8, secret_and_plaintext.len);
-            errdefer self.allocator.free(ciphertext);
-            ecb.encryptEcb(ciphertext, secret_and_plaintext, key);
-
-            return ciphertext;
+        pub fn calcSize(self: *const Self, plaintext_len: usize) usize {
+            return pad.calcWithPkcsSize(keysize / 8, secret_suffix.len + plaintext_len);
         }
 
-        fn createInput(self: *const Self, plaintext: []const u8) ![]u8 {
-            const padded_len = pad.calcWithPkcsSize(keysize / 8, secret_suffix.len + plaintext.len);
-            var secret_and_plaintext = try self.allocator.alloc(u8, padded_len);
+        pub fn encrypt(self: *const Self, dest: []u8, plaintext: []const u8) void {
+            assert(dest.len >= self.calcSize(plaintext.len));
 
             // create (plaintext || suffix)
-            mem.copy(u8, secret_and_plaintext, plaintext);
-            var idx: usize = 0;
-            while (idx < secret_suffix.len) : (idx += 1) {
-                secret_and_plaintext[plaintext.len + idx] = secret_suffix[idx];
-            }
+            mem.copy(u8, dest, plaintext);
+            mem.copy(u8, dest[plaintext.len..], secret_suffix[0..]);
 
-            pad.pkcsPad(keysize / 8, secret_and_plaintext, secret_and_plaintext[0 .. secret_suffix.len + plaintext.len]);
-            return secret_and_plaintext;
+            pad.pkcsPad(keysize / 8, dest, dest[0 .. secret_suffix.len + plaintext.len]);
+
+            // encrypt on top of plaintext || secret
+            ecb.encryptEcb(dest, dest, key);
+        }
+
+        pub fn encryptAlloc(self: *const Self, plaintext: []const u8) ![]u8 {
+            var dest = try self.allocator.alloc(u8, self.calcSize(plaintext.len));
+
+            self.encrypt(dest, plaintext);
+
+            return dest;
         }
     };
 }
 
-pub fn discoverBlockSize(allocator: *mem.Allocator, oracle: EncryptionOracle(128)) !u32 {
+pub fn discoverBlockSize(comptime keysize: usize, oracle: EncryptionOracle(keysize)) u32 {
     // detect block size
     // 1. begin with input of size 1 (smallest) and make note of size
     // 2. grow input until size changes; make note of new size
     // 3. block size == size(2) - size(1)
 
-    // limiting max blocksize to 256
-    var payload = try allocator.alloc(u8, 256);
-    defer allocator.free(payload);
-
-    // fill payload with something meaningless but not undefined
-    for (payload) |*byte| {
-        byte.* = 'A';
-    }
-
     // get initial size of encryption
-    var initial = try oracle.encrypt(payload[0..1]);
-    var initial_size = initial.len;
-    defer allocator.free(initial);
+    var initial_size = oracle.calcSize(1);
 
     var size: usize = 1;
-    while (size < payload.len) : (size += 1) {
-        payload[size - 1] = 'A';
-        var enc = try oracle.encrypt(payload[0..size]);
-        defer allocator.free(enc);
+    while (oracle.calcSize(size) == initial_size) : (size += 1) {}
 
-        if (enc.len > initial_size) return @truncate(u32, enc.len - initial_size);
-    }
-
-    return error.BlockSizeTooLarge;
+    return @truncate(u32, oracle.calcSize(size) - initial_size);
 }
 
-pub fn isOracleECB(allocator: *mem.Allocator, blocksize: u32, oracle: EncryptionOracle(128)) !bool {
-    var payload = try allocator.alloc(u8, 3 * blocksize);
+pub fn isOracleECB(comptime keysize: usize, allocator: *mem.Allocator, blocksize: u32, oracle: EncryptionOracle(keysize)) !bool {
+    var payload = try allocator.alloc(u8, oracle.calcSize(3 * blocksize));
     defer allocator.free(payload);
 
     for (payload) |*byte| {
         byte.* = 'A';
     }
 
-    var enc = try oracle.encrypt(payload[0..]);
-    defer allocator.free(enc);
+    // overwrite payload with its encryption
+    var enc = payload;
+    oracle.encrypt(enc, payload[0 .. 3 * blocksize]);
 
     // look for dupe blocks
     var seen_blocks = StringHashMap(void).init(allocator);
@@ -117,41 +101,57 @@ pub fn isOracleECB(allocator: *mem.Allocator, blocksize: u32, oracle: Encryption
     return false;
 }
 
-pub fn discoverSecretSuffix(allocator: *mem.Allocator, oracle: EncryptionOracle(128)) !void {
-    const blocksize = try discoverBlockSize(allocator, oracle);
-    const isECB = try isOracleECB(allocator, blocksize, oracle);
+pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, oracle: EncryptionOracle(keysize)) !void {
+    const blocksize = discoverBlockSize(keysize, oracle);
+    const isECB = try isOracleECB(keysize, allocator, blocksize, oracle);
     assert(isECB);
 
-    // make a map of every possible last byte of a block
+    var secret = ArrayList(u8).init(allocator);
+
     var dict = StringHashMap(u8).init(allocator);
     defer dict.deinit();
 
     var payload = try allocator.alloc(u8, blocksize);
     defer allocator.free(payload);
-    for (payload) |*byte| {
-        byte.* = 'A';
-    }
-    var b: u8 = 0;
-    while (b <= 255) : (b += 1) {
-        payload[payload.len - 1] = b;
-        var enc = try oracle.encrypt(payload);
+
+    var offset: usize = 1;
+    while (offset < blocksize) : (offset += 1) {
+        // set payload to all (A's || discovered-so-far)
+        var idx: usize = 0;
+        while (idx < payload.len - secret.items.len) : (idx += 1) {
+            payload[idx] = 'A';
+        }
+        mem.copy(u8, payload[payload.len - secret.items.len - 1 ..], secret.items);
+
+        // fill dictionary with the encryption of [AAAAA..<discovered secret><b>] => b
+        freeDictionary(allocator, dict);
+        dict.clear();
+        var b: u8 = 0;
+        while (b <= 255) : (b += 1) {
+            payload[payload.len - 1] = b;
+            std.debug.warn("\noffset: {}, secret: {}, payload: {}", .{ offset, secret.items, payload });
+            var enc = try oracle.encryptAlloc(payload);
+            defer allocator.free(enc);
+
+            // remember just the first block
+            var blk = try mem.dupe(allocator, u8, enc[0..blocksize]);
+            _ = try dict.put(blk, b);
+
+            if (b == 255) break;
+        }
+
+        // encrypt [AAAAA..<discovered secret>], leaving last byte open for unknown letter
+        var enc = try oracle.encryptAlloc(payload[0 .. payload.len - secret.items.len - 1]);
         defer allocator.free(enc);
-        var blk = try mem.dupe(allocator, u8, enc[0..blocksize]);
-        std.debug.warn("\n{} => {x}", .{ payload, enc });
-        _ = try dict.put(blk, b);
+        var blk = enc[0..blocksize];
 
-        if (b == 255) break;
+        var match = dict.getValue(blk) orelse unreachable;
+        try secret.append(match);
     }
-    defer freeDictionary(allocator, dict);
 
-    // encrypt blocksize-1 size payload and match the result in the dictionary
-    std.debug.warn("\npayload is: {}\n", .{payload[0 .. payload.len - 1]});
-    var enc = try oracle.encrypt(payload[0 .. payload.len - 1]);
-    defer allocator.free(enc);
-    var blk = enc[0..blocksize];
-
-    var match = dict.getValue(blk);
-    std.debug.warn("\ngot the first letter: {}\n", .{match});
+    freeDictionary(allocator, dict);
+    std.debug.warn("\n{}\n", .{secret.items});
+    secret.deinit();
 }
 
 fn freeDictionary(allocator: *mem.Allocator, dict: StringHashMap(u8)) void {
@@ -163,8 +163,9 @@ fn freeDictionary(allocator: *mem.Allocator, dict: StringHashMap(u8)) void {
 
 test "byte-at-a-time ecb decryption (simple)" {
     const allocator = testing.allocator;
-    var oracle = try EncryptionOracle(128).init(allocator);
+    const keysize: usize = 128;
+    var oracle = try EncryptionOracle(keysize).init(allocator);
     defer oracle.deinit();
 
-    try discoverSecretSuffix(allocator, oracle);
+    try discoverSecretSuffix(keysize, allocator, oracle);
 }
