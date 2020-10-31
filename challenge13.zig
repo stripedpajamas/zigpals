@@ -110,7 +110,7 @@ pub const User = struct {
                 },
                 else => {
                     if (buf_idx >= buf.len) {
-                        return error.EmailTooLong;
+                        return error.ValueTooBig;
                     }
                     buf[buf_idx] = str[idx];
                     buf_idx += 1;
@@ -195,7 +195,7 @@ test "user parsing errors" {
         .{ .input = "email=foo@bar.com&uid=14294967295&role=User", .expected_err = error.InvalidUserID },
         .{ .input = "email=foo@bar.com&uid=4294967295&role=Poppy", .expected_err = error.InvalidRole },
         .{ .input = "&email=foo@bar.com&uid=4294967295&role=User", .expected_err = error.InvalidInput },
-        .{ .input = "email=foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@bar.com&uid=4294967295&role=User", .expected_err = error.EmailTooLong },
+        .{ .input = "email=foooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@bar.com&uid=4294967295&role=User", .expected_err = error.ValueTooBig },
     };
     for (tests) |t| {
         if (User.fromString(testing.allocator, t.input)) |user| {
