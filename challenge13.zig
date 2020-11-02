@@ -1,7 +1,10 @@
 const std = @import("std");
+const ecb = @import("./challenge7.zig");
+const pad = @import("./challenge9.zig");
 const math = std.math;
 const mem = std.mem;
 const fmt = std.fmt;
+const crypto = std.crypto;
 const assert = std.debug.assert;
 const testing = std.testing;
 
@@ -63,7 +66,7 @@ pub const User = struct {
     }
 
     // Caller owns allocated email field (must free user.email at some point)
-    pub fn profileFrom(allocator: *mem.Allocator, email: []const u8) !User {
+    pub fn profileFor(allocator: *mem.Allocator, email: []const u8) !User {
         var clean_email = try allocator.alloc(u8, email.len);
         var idx: usize = 0;
         var bad_chars: usize = 0;
@@ -184,6 +187,59 @@ pub const User = struct {
     }
 };
 
+pub const UserController = struct {
+    var key: [16]u8 = undefined;
+
+    allocator: *mem.Allocator,
+
+    pub fn init(allocator: *mem.Allocator) !UserController {
+        var buf: [8]u8 = undefined;
+        try crypto.randomBytes(buf[0..]);
+
+        var seed = mem.readIntLittle(u64, buf[0..8]);
+        var rng = std.rand.DefaultCsprng.init(seed);
+
+        rng.random.bytes(key[0..]);
+
+        return UserController{
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *UserController) void {}
+
+    // create a profile, encode it, encrypt the encoding, and return it
+    pub fn profileFor(self: *UserController, email: []const u8) ![]const u8 {
+        var profile = try User.profileFor(self.allocator, email);
+        defer self.allocator.free(profile.email);
+
+        var encoded = try self.allocator.alloc(u8, profile.encodedSize());
+        defer self.allocator.free(encoded);
+        profile.encode(encoded);
+
+        var enc = try self.allocator.alloc(u8, pad.calcWithPkcsSize(16, encoded.len));
+        pad.pkcsPad(16, enc, encoded);
+
+        ecb.encryptEcb(enc, enc, key);
+
+        return enc;
+    }
+
+    // given an encrypted, encoded profile, return the underlying user data
+    pub fn parseProfile(self: *UserController, encrypted_profile: []const u8) !User {
+        var encoded = try self.allocator.alloc(u8, encrypted_profile.len);
+        defer self.allocator.free(encoded);
+        ecb.decryptEcb(encoded, encrypted_profile, key);
+
+        // remove padding in a silly kinda way
+        var pad_len = encoded[encoded.len - 1];
+        var unpadded = encoded[0 .. encoded.len - pad_len];
+        var user = try User.fromString(self.allocator, unpadded);
+
+        return user;
+    }
+};
+
 test "user encoding" {
     var u = User{
         .email = "foo@bar.com",
@@ -230,16 +286,29 @@ test "user parsing errors" {
 
 test "profile from email" {
     var allocator = testing.allocator;
-    var user = try User.profileFrom(allocator, "asdf@fdsa.net");
+    var user = try User.profileFor(allocator, "asdf@fdsa.net");
     defer allocator.free(user.email);
 
     testing.expectEqualSlices(u8, user.email, "asdf@fdsa.net");
     assert(user.role == Role.User);
 
     // meta chars don't work
-    var user2 = try User.profileFrom(allocator, "asdf@fdsa.net&role=admin");
+    var user2 = try User.profileFor(allocator, "asdf@fdsa.net&role=admin");
     defer allocator.free(user2.email);
 
     testing.expectEqualSlices(u8, user2.email, "asdf@fdsa.netroleadmin");
     assert(user2.role == Role.User);
+}
+
+test "user controller profile for" {
+    var allocator = testing.allocator;
+    var controller = try UserController.init(allocator);
+
+    var enc_user = try controller.profileFor("asdf@fdsa.net");
+    defer allocator.free(enc_user);
+    std.debug.warn("\n{x}\n", .{enc_user});
+
+    var dec_user = try controller.parseProfile(enc_user);
+    defer allocator.free(dec_user.email);
+    std.debug.warn("\n{}\n", .{dec_user});
 }
