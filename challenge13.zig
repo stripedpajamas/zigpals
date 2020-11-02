@@ -63,6 +63,28 @@ pub const User = struct {
     }
 
     // Caller owns allocated email field (must free user.email at some point)
+    pub fn profileFrom(allocator: *mem.Allocator, email: []const u8) !User {
+        var clean_email = try allocator.alloc(u8, email.len);
+        var idx: usize = 0;
+        var bad_chars: usize = 0;
+        while (idx < email.len) : (idx += 1) {
+            if (email[idx] == '=' or email[idx] == '&') {
+                bad_chars += 1;
+                continue;
+            }
+            clean_email[idx - bad_chars] = email[idx];
+        }
+
+        clean_email = allocator.shrink(clean_email, email.len - bad_chars);
+
+        return User{
+            .email = clean_email,
+            .uid = 15,
+            .role = Role.User,
+        };
+    }
+
+    // Caller owns allocated email field (must free user.email at some point)
     pub fn fromString(allocator: *mem.Allocator, str: []const u8) !User {
         // buffer to hold values as we parse
         var buf: [100]u8 = undefined;
@@ -204,4 +226,20 @@ test "user parsing errors" {
             assert(err == t.expected_err);
         }
     }
+}
+
+test "profile from email" {
+    var allocator = testing.allocator;
+    var user = try User.profileFrom(allocator, "asdf@fdsa.net");
+    defer allocator.free(user.email);
+
+    testing.expectEqualSlices(u8, user.email, "asdf@fdsa.net");
+    assert(user.role == Role.User);
+
+    // meta chars don't work
+    var user2 = try User.profileFrom(allocator, "asdf@fdsa.net&role=admin");
+    defer allocator.free(user2.email);
+
+    testing.expectEqualSlices(u8, user2.email, "asdf@fdsa.netroleadmin");
+    assert(user2.role == Role.User);
 }
