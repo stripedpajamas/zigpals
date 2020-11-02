@@ -240,6 +240,26 @@ pub const UserController = struct {
     }
 };
 
+pub fn createAdminProfile(allocator: *mem.Allocator, controller: *UserController) !User {
+    comptime var padding = [_]u8{0x0B} ** 11;
+    comptime var payload = "abcdefghij" ++ "Admin" ++ padding ++ "@xz";
+
+    var enc_user = try controller.profileFor(payload);
+    defer controller.allocator.free(enc_user);
+    var admin_blk = enc_user[16..32];
+
+    // admin user will be 1 block smaller than user profile
+    var enc_admin = try allocator.alloc(u8, enc_user.len - 16);
+    defer allocator.free(enc_admin);
+    mem.copy(u8, enc_admin, enc_user[0..16]);
+    mem.copy(u8, enc_admin[16..], enc_user[32..48]);
+    mem.copy(u8, enc_admin[32..], admin_blk);
+
+    var admin = try controller.parseProfile(enc_admin);
+
+    return admin;
+}
+
 test "user encoding" {
     var u = User{
         .email = "foo@bar.com",
@@ -311,4 +331,13 @@ test "user controller profile for" {
     var dec_user = try controller.parseProfile(enc_user);
     defer allocator.free(dec_user.email);
     std.debug.warn("\n{}\n", .{dec_user});
+}
+
+test "create admin profile" {
+    var allocator = testing.allocator;
+    var controller = try UserController.init(allocator);
+
+    var admin = try createAdminProfile(allocator, &controller);
+    defer allocator.free(admin.email);
+    assert(admin.role == Role.Admin);
 }
