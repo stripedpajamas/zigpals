@@ -193,10 +193,9 @@ pub const UserController = struct {
     allocator: *mem.Allocator,
 
     pub fn init(allocator: *mem.Allocator) !UserController {
-        var buf: [8]u8 = undefined;
-        try crypto.randomBytes(buf[0..]);
+        var seed: [std.rand.DefaultCsprng.secret_seed_length]u8 = undefined;
+        try crypto.randomBytes(seed[0..]);
 
-        var seed = mem.readIntLittle(u64, buf[0..8]);
         var rng = std.rand.DefaultCsprng.init(seed);
 
         rng.random.bytes(key[0..]);
