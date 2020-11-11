@@ -18,10 +18,9 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
         allocator: *mem.Allocator,
 
         pub fn init(allocator: *mem.Allocator) !Self {
-            var buf: [8]u8 = undefined;
-            try crypto.randomBytes(buf[0..]);
+            var seed: [std.rand.DefaultCsprng.secret_seed_length]u8 = undefined;
+            try crypto.randomBytes(seed[0..]);
 
-            var seed = mem.readIntLittle(u64, buf[0..8]);
             var rng = std.rand.DefaultCsprng.init(seed);
 
             rng.random.bytes(key[0..]);
@@ -117,9 +116,6 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
     var padded_secret_len = oracle.calcSize(0);
     var secret = try ArrayList(u8).initCapacity(allocator, padded_secret_len);
 
-    var dict = StringHashMap(u8).init(allocator);
-    defer dict.deinit();
-
     // make a big buffer than can hold everything we will ever need
     var enc_buf = try allocator.alloc(u8, oracle.calcSize(padded_secret_len));
     defer allocator.free(enc_buf);
@@ -141,8 +137,13 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
             mem.copy(u8, payload[payload.len - secret.items.len - 1 ..], secret.items);
 
             // fill dictionary with the encryption of [AAAAA..<discovered secret><b>] => b
-            freeDictionary(allocator, dict);
-            dict.clear();
+            var dict = StringHashMap(u8).init(allocator);
+            defer {
+                freeDictionary(allocator, dict);
+                dict.deinit();
+            }
+            try dict.ensureCapacity(256);
+
             var b: u8 = 0;
             while (b <= 255) : (b += 1) {
                 payload[payload.len - 1] = b;
@@ -163,12 +164,10 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
 
             var blk = enc[block * blocksize .. (block + 1) * blocksize];
 
-            var match = dict.getValue(blk) orelse break;
+            var match = dict.get(blk) orelse break;
             try secret.append(match);
         }
     }
-
-    freeDictionary(allocator, dict);
 
     return secret.toOwnedSlice();
 }
