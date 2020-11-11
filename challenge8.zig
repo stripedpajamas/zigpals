@@ -12,18 +12,15 @@ pub fn AesEcbDetector(comptime keysize: usize) type {
 
         allocator: *mem.Allocator,
         samples: ArrayList([]const u8),
-        blocks: StringHashMap(void),
 
         pub fn init(allocator: *mem.Allocator) Self {
             return Self{
                 .allocator = allocator,
-                .blocks = StringHashMap(void).init(allocator),
                 .samples = ArrayList([]const u8).init(allocator),
             };
         }
 
         pub fn deinit(self: *Self) void {
-            self.blocks.deinit();
             for (self.samples.items) |item| {
                 self.allocator.free(item);
             }
@@ -31,14 +28,17 @@ pub fn AesEcbDetector(comptime keysize: usize) type {
         }
 
         pub fn isEcb(self: *Self, enc: []const u8) !bool {
-            self.blocks.clear();
+            var blocks = StringHashMap(void).init(self.allocator);
+            defer blocks.deinit();
+            try blocks.ensureCapacity(@truncate(u32, enc.len / (keysize / 8)));
+
             const ks_bytes = keysize / 8;
             var idx: usize = 0;
             while (idx < enc.len) : (idx += ks_bytes) {
-                if (self.blocks.get(enc[idx .. idx + ks_bytes])) |_| {
+                if (blocks.get(enc[idx .. idx + ks_bytes])) |_| {
                     return true;
                 }
-                _ = try self.blocks.put(enc[idx .. idx + ks_bytes], {});
+                _ = try blocks.put(enc[idx .. idx + ks_bytes], {});
             }
             return false;
         }
