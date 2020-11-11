@@ -6,6 +6,7 @@ const detector = @import("./challenge8.zig");
 const assert = std.debug.assert;
 const mem = std.mem;
 const crypto = std.crypto;
+const rand = std.rand;
 const testing = std.testing;
 
 pub const AesMode = enum {
@@ -22,12 +23,11 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
         const Self = @This();
 
         allocator: *mem.Allocator,
-        rng: std.rand.DefaultCsprng,
+        rng: rand.DefaultCsprng,
 
         pub fn init(allocator: *mem.Allocator) !Self {
-            var buf: [8]u8 = undefined;
-            try crypto.randomBytes(buf[0..]);
-            const seed = mem.readIntLittle(u64, buf[0..8]);
+            var seed: [rand.DefaultCsprng.secret_seed_length]u8 = undefined;
+            try crypto.randomBytes(seed[0..]);
 
             return Self{
                 .allocator = allocator,
@@ -35,18 +35,17 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             };
         }
 
-        pub fn deinit(self: *Self) void {
-        }
+        pub fn deinit(self: *Self) void {}
 
         // caller is responsible to free result.ciphertext and result.iv
         pub fn encrypt(self: *Self, plaintext: []const u8) !OracleResult {
-            var key: [keysize/8]u8 = undefined;
+            var key: [keysize / 8]u8 = undefined;
             self.rng.random.bytes(&key);
 
             const garbage_prefix_len = self.rng.random.intRangeLessThan(usize, 5, 10);
             const garbage_suffix_len = self.rng.random.intRangeLessThan(usize, 5, 10);
             const dirtied_len = garbage_prefix_len + plaintext.len + garbage_suffix_len;
-            const padded_dirtied_len = pad.calcWithPkcsSize(keysize/8, dirtied_len);
+            const padded_dirtied_len = pad.calcWithPkcsSize(keysize / 8, dirtied_len);
             const dirtied_input = try self.allocator.alloc(u8, padded_dirtied_len);
             defer self.allocator.free(dirtied_input);
 
@@ -56,18 +55,18 @@ pub fn EncryptionOracle(comptime keysize: usize) type {
             }
             try crypto.randomBytes(dirtied_input[dirtied_len - garbage_suffix_len .. dirtied_len]);
 
-            pad.pkcsPad(keysize/8, dirtied_input, dirtied_input[0..dirtied_len]);
+            pad.pkcsPad(keysize / 8, dirtied_input, dirtied_input[0..dirtied_len]);
 
             var ciphertext = try self.allocator.alloc(u8, dirtied_input.len);
             errdefer self.allocator.free(ciphertext);
 
             var mode = if (self.rng.random.boolean()) AesMode.CBC else AesMode.ECB;
-            var iv = try self.allocator.alloc(u8, keysize/8);
-            
+            var iv = try self.allocator.alloc(u8, keysize / 8);
+
             switch (mode) {
                 AesMode.CBC => {
                     self.rng.random.bytes(iv);
-                    cbc.encryptCbc(ciphertext, dirtied_input, key, iv[0..keysize/8].*);
+                    cbc.encryptCbc(ciphertext, dirtied_input, key, iv[0 .. keysize / 8].*);
                 },
                 AesMode.ECB => {
                     ecb.encryptEcb(ciphertext, dirtied_input, key);
@@ -94,7 +93,7 @@ pub fn detectMode(comptime keysize: usize, oracle: *EncryptionOracle(keysize)) !
 
     const isEcb = try det.isEcb(enc.ciphertext);
     const isActuallyEcb = enc.mode == AesMode.ECB;
-    
+
     return (isEcb and isActuallyEcb) or (!isEcb and !isActuallyEcb);
 }
 
