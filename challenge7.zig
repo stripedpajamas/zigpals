@@ -1,22 +1,52 @@
 const std = @import("std");
+const Aes128 = std.crypto.core.aes.Aes128;
 const base64 = std.base64;
 const testing = std.testing;
 const Base64DecoderWithIgnore = base64.Base64DecoderWithIgnore;
 
 pub fn encryptEcb(dst: []u8, src: []const u8, key: [16]u8) void {
-    var aes = std.crypto.AES128.init(key);
+    var aes = Aes128.initEnc(key);
+    var blk: [16]u8 = undefined;
+
     var idx: usize = 0;
-    while (idx < src.len) : (idx += key.len) {
-        aes.encrypt(dst[idx .. idx + key.len], src[idx .. idx + key.len]);
+    while (idx < src.len) : (idx += blk.len) {
+        // copy src into blk
+        var j: usize = 0;
+        while (j < blk.len) : (j += 1) {
+            blk[j] = src[j + idx];
+        }
+
+        // encrypt into blk
+        aes.encrypt(&blk, &blk);
+
+        // copy encryption into dst
+        j = 0;
+        while (j < blk.len) : (j += 1) {
+            dst[j + idx] = blk[j];
+        }
     }
 }
 
 pub fn decryptEcb(dst: []u8, src: []const u8, key: [16]u8) void {
-    var aes = std.crypto.AES128.init(key);
+    var aes = Aes128.initDec(key);
+    var blk: [16]u8 = undefined;
 
     var idx: usize = 0;
-    while (idx < src.len) : (idx += key.len) {
-        aes.decrypt(dst[idx .. idx + key.len], src[idx .. idx + key.len]);
+    while (idx < src.len) : (idx += blk.len) {
+        // copy src into blk
+        var j: usize = 0;
+        while (j < blk.len) : (j += 1) {
+            blk[j] = src[j + idx];
+        }
+
+        // decrypt into blk
+        aes.decrypt(&blk, &blk);
+
+        // copy decryption into dst
+        j = 0;
+        while (j < blk.len) : (j += 1) {
+            dst[j + idx] = blk[j];
+        }
     }
 }
 
