@@ -101,11 +101,7 @@ pub const LanguageScorer = struct {
         toLower(self.text, input);
         const text = self.text;
 
-        var byte: u8 = 0;
-        while (byte <= 255) : (byte += 1) {
-            try self.letter_frequencies.put(byte, 0.0);
-            if (byte == 255) break;
-        }
+        self.letter_frequencies.clearRetainingCapacity();
         var char_count: f32 = 0;
         for (text) |letter| {
             const freq_key = if (ascii.isPunct(letter) or ascii.isDigit(letter)) '.' else letter;
@@ -120,7 +116,7 @@ pub const LanguageScorer = struct {
         };
 
         var sum_of_squared_errors: f32 = 0;
-        byte = 0;
+        var byte: u8 = 0;
         while (byte <= 255) : (byte += 1) {
             const actual_freq = (self.letter_frequencies.get(byte) orelse 0.0) / char_count * 100;
             const expected_freq = freq_table[byte];
