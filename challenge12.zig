@@ -116,6 +116,10 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
     var padded_secret_len = oracle.calcSize(0);
     var secret = try ArrayList(u8).initCapacity(allocator, padded_secret_len);
 
+    var dict = StringHashMap(u8).init(allocator);
+    try dict.ensureCapacity(256);
+    defer dict.deinit();
+
     // make a big buffer than can hold everything we will ever need
     var enc_buf = try allocator.alloc(u8, oracle.calcSize(padded_secret_len));
     defer allocator.free(enc_buf);
@@ -137,12 +141,8 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
             mem.copy(u8, payload[payload.len - secret.items.len - 1 ..], secret.items);
 
             // fill dictionary with the encryption of [AAAAA..<discovered secret><b>] => b
-            var dict = StringHashMap(u8).init(allocator);
-            defer {
-                freeDictionary(allocator, dict);
-                dict.deinit();
-            }
-            try dict.ensureCapacity(256);
+            freeDictionary(allocator, dict);
+            dict.clearRetainingCapacity();
 
             var b: u8 = 0;
             while (b <= 255) : (b += 1) {
@@ -168,6 +168,8 @@ pub fn discoverSecretSuffix(comptime keysize: usize, allocator: *mem.Allocator, 
             try secret.append(match);
         }
     }
+
+    freeDictionary(allocator, dict);
 
     return secret.toOwnedSlice();
 }
