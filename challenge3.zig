@@ -8,9 +8,7 @@ const math = std.math;
 const testing = std.testing;
 const assert = std.debug.assert;
 
-pub const Language = enum {
-    English
-};
+pub const Language = enum { English };
 
 // a comptime lookup table of u8 -> f32
 // this is mostly a convenience since its known that all the keys will be unique
@@ -183,9 +181,9 @@ pub const SingleByteXorKeyFinder = struct {
         var high_score: f32 = -math.f32_max;
         var it = self.key_scores.iterator();
         while (it.next()) |entry| {
-            if (entry.value > high_score) {
-                high_score = entry.value;
-                high_score_key = entry.key;
+            if (entry.value_ptr.* > high_score) {
+                high_score = entry.value_ptr.*;
+                high_score_key = entry.key_ptr.*;
             }
         }
 
@@ -199,19 +197,19 @@ test "language scorer" {
     var score_eng = try scorer.score("you can get back to enjoying your new Hyundai");
     var score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 
-    std.debug.warn("\n1. score_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
+    std.log.warn("\n1. score_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
     assert(score_eng > score_gib); // 1
 
     score_eng = try scorer.score("YOU CAN GET BACK TO ENJOYING YOUR NEW HYUNDAI");
     score_gib = try scorer.score("asjf jas jasldfj alskf alsdfj skfj lasfj alff");
 
-    std.debug.warn("\n2. score_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
+    std.log.warn("\n2. score_eng: {} :: score_gib: {}", .{ score_eng, score_gib });
     assert(score_eng > score_gib); // 2
 
     score_eng = try scorer.score(" olceiom c  ho nuce  st2sl  k,\notl'eol e rldtspas yaandnou rsogmctiy,aeo doo ct a k tf,fwoif  s aet");
     score_gib = try scorer.score("e*)& ,*(e&ee-*e+0& ee61w6)ee.iO*1)b *)e e7)!165$6e<$$+!+*0e76*\"(&1,<i$ *e!**e&1e$e.e1#i#2*,#ee6e$ 1");
 
-    std.debug.warn("\n3. score_eng: {} :: score_gib: {}\n", .{ score_eng, score_gib });
+    std.log.warn("\n3. score_eng: {} :: score_gib: {}\n", .{ score_eng, score_gib });
     assert(score_eng > score_gib); // 3
 }
 
@@ -224,7 +222,7 @@ test "find single byte xor key" {
 
     var dec: [34]u8 = undefined;
     singleByteXor(dec[0..], enc[0..], key);
-    std.debug.warn("\ndetermined key to be: {}\ndecrypted: {}\n\n", .{ key, dec });
+    std.log.warn("\ndetermined key to be: {}\ndecrypted: {s}\n\n", .{ key, dec });
 
     // histogram can't tell difference between uppercase and lowercase key
     assert(key == 88 or key == 120);
