@@ -10,9 +10,7 @@ const testing = std.testing;
 const fmt = std.fmt;
 const mem = std.mem;
 
-pub const DetectionResult = struct {
-    enc: []u8, dec: []u8, key: u8
-};
+pub const DetectionResult = struct { enc: []u8, dec: []u8, key: u8 };
 
 pub const SingleByteXorDetector = struct {
     allocator: *mem.Allocator,
@@ -101,15 +99,15 @@ test "detect single byte xor" {
     var input_it = mem.split(challenge4_input_raw, "\n");
     while (input_it.next()) |line| {
         var line_size = line.len / 2;
-        try fmt.hexToBytes(enc[0..line_size], line);
+        _ = try fmt.hexToBytes(enc[0..line_size], line);
         try detector.addSample(enc[0..line_size]);
     }
 
     const detectionResult = detector.getMostLikelySample();
-    std.debug.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});
+    std.log.warn("\n\ncompleted in {}ms\n", .{std.time.milliTimestamp() - beginTs});
 
-    std.debug.warn("\nenc: {x}\ndec: {}\nkey: {}\n", .{
-        detectionResult.enc,
+    std.log.warn("\nenc: {x}\ndec: {s}\nkey: {}\n", .{
+        fmt.fmtSliceHexLower(detectionResult.enc),
         detectionResult.dec,
         detectionResult.key,
     });
