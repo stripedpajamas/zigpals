@@ -13,11 +13,11 @@ pub const Encoder = struct {
     }
 
     pub fn base64ToHex(enc: *const Encoder, input: []const u8) ![]const u8 {
-        var inputBytes = try enc.allocator.alloc(u8, try base64.standard_decoder.calcSize(input));
+        var inputBytes = try enc.allocator.alloc(u8, try base64.standard.Decoder.calcSizeForSlice(input));
         defer enc.allocator.free(inputBytes);
-        try base64.standard_decoder.decode(inputBytes, input);
+        try base64.standard.Decoder.decode(inputBytes, input);
 
-        var output = try fmt.allocPrint(enc.allocator, "{x}", .{inputBytes});
+        var output = try fmt.allocPrint(enc.allocator, "{x}", .{fmt.fmtSliceHexLower(inputBytes)});
 
         return output;
     }
@@ -25,11 +25,11 @@ pub const Encoder = struct {
     pub fn hexToBase64(enc: *const Encoder, input: []const u8) ![]const u8 {
         var inputBytes = try enc.allocator.alloc(u8, input.len / 2);
         defer enc.allocator.free(inputBytes);
-        try fmt.hexToBytes(inputBytes, input);
+        _ = try fmt.hexToBytes(inputBytes, input);
 
-        const outputLen = base64.Base64Encoder.calcSize(inputBytes.len);
+        const outputLen = base64.standard.Encoder.calcSize(inputBytes.len);
         var output = try enc.allocator.alloc(u8, outputLen);
-        base64.standard_encoder.encode(output, inputBytes);
+        _ = base64.standard.Encoder.encode(output, inputBytes);
 
         return output;
     }
@@ -44,6 +44,6 @@ test "encoder" {
     defer testing.allocator.free(actual_b64);
     const actual_hex = try encoder.base64ToHex(expected_b64);
     defer testing.allocator.free(actual_hex);
-    testing.expectEqualSlices(u8, actual_hex, expected_hex);
-    testing.expectEqualSlices(u8, actual_b64, expected_b64);
+    try testing.expectEqualSlices(u8, actual_hex, expected_hex);
+    try testing.expectEqualSlices(u8, actual_b64, expected_b64);
 }
