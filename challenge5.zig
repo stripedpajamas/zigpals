@@ -22,5 +22,5 @@ test "repeated key xor" {
     var actual: [expected.len]u8 = undefined;
     repeatedKeyXor(actual[0..], input_text, key);
 
-    testing.expectEqualSlices(u8, expected[0..], actual[0..]);
+    try testing.expectEqualSlices(u8, expected[0..], actual[0..]);
 }
