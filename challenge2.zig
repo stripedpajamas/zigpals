@@ -29,7 +29,7 @@ test "xor cipher" {
     var actual: [18]u8 = undefined;
     fixedXor(actual[0..], input[0..], key[0..]);
 
-    testing.expectEqualSlices(u8, actual[0..], expected[0..]);
+    try testing.expectEqualSlices(u8, actual[0..], expected[0..]);
 }
 
 test "single-byte cipher" {
@@ -39,5 +39,5 @@ test "single-byte cipher" {
 
     var actual: [11]u8 = undefined;
     singleByteXor(actual[0..], input, key);
-    testing.expectEqualSlices(u8, actual[0..], expected[0..]);
+    try testing.expectEqualSlices(u8, actual[0..], expected[0..]);
 }
